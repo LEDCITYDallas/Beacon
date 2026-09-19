@@ -14,6 +14,18 @@ This is a local dev scaffold. Per Section 10.1, once this is reviewed it
 should be pushed as the first commit into a **private repo under the LED
 City Dallas GitHub org** — not developed further in a personal repo.
 
+The first local commit exists (`git init` done, secrets excluded — verify
+with `git status` that `backend/.env` is not tracked). To transfer:
+
+```bash
+# after Omair creates the private repo <repo-name> under the org and invites you:
+git remote add origin git@github.com:<led-city-dallas-org>/<repo-name>.git
+git branch -M main
+git push -u origin main
+```
+
+From that point on, all work happens directly in the org repo.
+
 ## What's implemented
 
 **Backend** (`/backend` — Node/Express/MongoDB)
