@@ -1,0 +1,30 @@
+{
+  "name": "led-city-workforce-backend",
+  "version": "0.1.0",
+  "description": "LED City Agentic Workforce Assistant - Backend (Phase 1+2: Task & Dependency Engine)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "dev:memory": "node scripts/dev-memory.js",
+    "start": "node server.js",
+    "seed": "node seed/seedMockData.js",
+    "test": "node scripts/smoke-test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "hpp": "^0.2.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.5.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.0.0",
+    "nodemon": "^3.1.4"
+  }
+}

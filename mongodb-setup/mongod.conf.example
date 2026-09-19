@@ -1,0 +1,41 @@
+# Sample hardened mongod.conf for the LED City production Mac mini.
+# This is a REFERENCE for Omair when wiring up production (Section
+# 10.4) - Ahmed never touches the live host or its credentials.
+#
+# Copy the relevant bits into the real /etc/mongod.conf (or
+# /usr/local/etc/mongod.conf on macOS via Homebrew) and restart mongod.
+
+net:
+  # Bind ONLY to localhost + the Tailscale interface IP - never 0.0.0.0.
+  # Find the Tailscale IP with `tailscale ip -4` and put it here alongside
+  # 127.0.0.1. This is what actually keeps the database off the public
+  # internet, not the password alone.
+  bindIp: 127.0.0.1,100.x.x.x   # <-- replace with the real Tailscale IP
+  port: 27017                   # consider changing to a non-default port
+
+  tls:
+    mode: requireTLS
+    certificateKeyFile: /etc/mongo/mongodb.pem   # generate a cert for internal use
+
+security:
+  authorization: enabled   # OFF by default in MongoDB - this is the #1 misconfig
+                            # that leads to "wide open" databases found by scanners
+
+storage:
+  dbPath: /var/lib/mongodb
+  # Enable filesystem-level encryption at rest via FileVault (macOS) on
+  # the volume this lives on, since MongoDB Community doesn't include
+  # native encrypted storage (that's an Enterprise feature).
+
+systemLog:
+  destination: file
+  path: /var/log/mongodb/mongod.log
+  logAppend: true
+
+auditLog:
+  # Requires MongoDB Enterprise. If only Community is available, rely on
+  # systemLog + application-level audit logging in the Node backend
+  # instead (log who queried/modified what, at the app layer).
+  destination: file
+  path: /var/log/mongodb/audit.log
+  format: JSON
