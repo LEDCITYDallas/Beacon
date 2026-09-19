@@ -9,6 +9,7 @@
     "dev:memory": "node scripts/dev-memory.js",
     "start": "node server.js",
     "seed": "node seed/seedMockData.js",
+    "retention": "node scripts/retention.js",
     "test": "node scripts/smoke-test.js"
   },
   "dependencies": {

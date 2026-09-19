@@ -21,6 +21,8 @@ const timelineEventSchema = new mongoose.Schema(
         "COMPLETION_CONFIRMED",
         "COMPLETION_REJECTED",
         "OVERRUN_ALERT",
+        "TASK_FLAGGED", // Section 3: manager flags a task needing attention
+        "TASK_UNFLAGGED",
       ],
       required: true,
     },
@@ -66,6 +68,12 @@ const taskSchema = new mongoose.Schema(
     // configurable per task/org later.
     overrunThresholdPct: { type: Number, default: 120 },
     overrunAlertFired: { type: Boolean, default: false },
+
+    // Section 3: managers can flag tasks (attention marker, not a status).
+    flagged: { type: Boolean, default: false },
+    flagNote: { type: String, default: "" },
+    flaggedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    flaggedAt: { type: Date, default: null },
 
     // Completion detection (Section 4 - the core requirement). Phase 1/2
     // ships the manual path + the human-in-the-loop proposal structure.

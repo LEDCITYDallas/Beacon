@@ -34,6 +34,13 @@ function taskAccessError(user, task, action) {
   const isAssignee = String(task.assignedTo) === String(user._id);
   const sameDept = task.department === user.department;
 
+  if (action === "manage") {
+    // Flag/unflag tasks (Section 3: manager "can flag tasks").
+    if (isSuper) return null;
+    if (isManager && sameDept) return null;
+    return 403;
+  }
+
   if (action === "read" || action === "propose") {
     if (isSuper) return null;
     if (isManager && sameDept) return null;
@@ -452,4 +459,33 @@ exports.getTaskTimeline = async (req, res) => {
   if (!task) return;
   await task.populate("timeline.actor", "name");
   res.json(task.timeline);
+};
+
+// ---------------------------------------------------------------------
+// FLAG (Section 3: manager "can flag tasks") - an attention marker, not
+// a status. Manager (same department) or Super Admin only.
+// ---------------------------------------------------------------------
+exports.setTaskFlag = async (req, res) => {
+  const task = await loadAuthorizedTask(req, res, "manage");
+  if (!task) return;
+  if (task.status === "COMPLETED") {
+    return res.status(400).json({ message: "Cannot flag a completed task" });
+  }
+
+  const { flagged, note } = req.body;
+  const shouldFlag = Boolean(flagged);
+
+  task.flagged = shouldFlag;
+  task.flagNote = shouldFlag ? String(note || "").slice(0, 500) : "";
+  task.flaggedBy = shouldFlag ? req.user._id : null;
+  task.flaggedAt = shouldFlag ? new Date() : null;
+  addTimelineEvent(
+    task,
+    shouldFlag ? "TASK_FLAGGED" : "TASK_UNFLAGGED",
+    req.user._id,
+    note ? { note: String(note).slice(0, 500) } : {}
+  );
+  await task.save();
+
+  res.json(task);
 };

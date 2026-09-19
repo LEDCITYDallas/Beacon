@@ -16,4 +16,6 @@ export interface Task {
   blockedReason?: { type: "WAITING_ON_OTHER" | "NOT_CONFIDENT"; note: string };
   pendingCompletionProposal?: { isPending: boolean; detectedSignal: string };
   overrunAlertFired: boolean;
+  flagged?: boolean;
+  flagNote?: string;
 }
