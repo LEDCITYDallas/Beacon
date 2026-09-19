@@ -16,7 +16,7 @@ are not prompt instructions.
 | 2 | Draft a reply / status update / summary | **No** for generating the draft — it is only text | n/a | Draft returned to the employee, never stored as sent |
 | 3 | **Send** a drafted message (WhatsApp/email) | **Yes — always** | The employee (review screen) | `POST /api/assistant/messages/:id/send` requires an explicit confirm; draft is discarded if declined |
 | 4 | Mark a task complete | **Yes — always** | The task's assignee (existing `confirm-completion` flow) | Assistant may call `proposeCompletion` only; finalization is the existing human-in-the-loop endpoint |
-| 5 | Notify a teammate that a dependency is ready | **Yes — always** | The task's assignee or manager | Proposal row created first; send only on confirm |
+| 5 | Notify a teammate that a dependency is ready | **Yes — always** | The person who completed the upstream task, a manager of the related department, or a Super Admin | When a dependency unblocks, the system **auto-creates a PENDING** `HANDOFF` proposal targeting the dependent task's assignee; sending requires an explicit confirm — nothing transmits while PENDING |
 | 6 | Create / edit / delete tasks | **Never** — out of scope for the assistant in v1 | n/a | No code path exists; the assistant cannot mutate tasks |
 | 7 | Access another employee's tasks or stats | **Never** | n/a | All assistant queries are hard-filtered by the requester's identity and Section 3 role scope |
 

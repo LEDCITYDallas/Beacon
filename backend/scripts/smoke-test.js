@@ -495,6 +495,124 @@ async function main() {
   check("creator declines -> DECLINED, nothing sent", decline.status === 200 && decline.data.status === "DECLINED");
 
   // ------------------------------------------------------------------
+  // 12. Proactive handoff auto-trigger (Section 5.2 + approval-gates row 5)
+  // ------------------------------------------------------------------
+  console.log("\n[auto handoff proposals]");
+  // Section 9 completed taskA, which unblocked taskB -> a PENDING HANDOFF
+  // proposal for taskB should already exist, created by the completer.
+  const autoList = await api("GET", "/assistant/messages", { token: bilalToken });
+  const autoProposal = autoList.data.find(
+    (p) => p.kind === "HANDOFF" && p.status === "PENDING" &&
+      p.relatedTask === taskB._id
+  );
+  check(
+    "unblock auto-creates a PENDING handoff proposal",
+    Boolean(autoProposal) && autoProposal.body.includes(taskB.title.slice(0, 12)),
+    autoProposal ? "body mismatch" : "no matching proposal"
+  );
+
+  const autoConfirm = await api(
+    "POST",
+    `/assistant/messages/${autoProposal._id}/confirm`,
+    { token: bilalToken }
+  );
+  check(
+    "completer confirms the auto handoff -> SENT",
+    autoConfirm.status === 200 && autoConfirm.data.status === "SENT"
+  );
+
+  // Manager approval path: sana creates a fresh dependency pair for bilal,
+  // bilal completes upstream, then sana (same-department manager) confirms
+  // the auto-created proposal.
+  const up = await api("POST", "/tasks", {
+    token: sanaToken,
+    body: {
+      title: "Handoff chain upstream",
+      definitionOfDone: "probe",
+      estimatedHours: 1,
+      dueDate: future,
+      assignedTo: bilal.user.id,
+    },
+  });
+  const down = await api("POST", "/tasks", {
+    token: sanaToken,
+    body: {
+      title: "Handoff chain downstream",
+      definitionOfDone: "probe",
+      estimatedHours: 1,
+      dueDate: future,
+      assignedTo: bilal.user.id,
+      dependsOn: [up.data._id],
+    },
+  });
+  check(
+    "downstream task starts BLOCKED",
+    down.status === 201 && down.data.status === "BLOCKED"
+  );
+
+  await api("POST", `/tasks/${up.data._id}/complete`, { token: bilalToken });
+  const downAfter = await api("GET", `/tasks/${down.data._id}`, { token: sanaToken });
+  check("downstream auto-flipped to READY", downAfter.data.status === "READY");
+
+  const chainList = await api("GET", "/assistant/messages", { token: sanaToken });
+  const chainProposal = chainList.data.find(
+    (p) => p.kind === "HANDOFF" && p.status === "PENDING" &&
+      p.relatedTask === down.data._id
+  );
+  check("manager sees the auto handoff proposal", Boolean(chainProposal));
+
+  const mgrConfirm = await api(
+    "POST",
+    `/assistant/messages/${chainProposal._id}/confirm`,
+    { token: sanaToken }
+  );
+  check(
+    "same-department manager confirms -> SENT",
+    mgrConfirm.status === 200 && mgrConfirm.data.status === "SENT",
+    `got ${mgrConfirm.status}`
+  );
+
+  // A foreign employee (maria, Showroom) must not decide bilal's proposals.
+  const chain2Up = await api("POST", "/tasks", {
+    token: sanaToken,
+    body: {
+      title: "Handoff chain 2 upstream",
+      definitionOfDone: "probe",
+      estimatedHours: 1,
+      dueDate: future,
+      assignedTo: bilal.user.id,
+    },
+  });
+  const chain2Down = await api("POST", "/tasks", {
+    token: sanaToken,
+    body: {
+      title: "Handoff chain 2 downstream",
+      definitionOfDone: "probe",
+      estimatedHours: 1,
+      dueDate: future,
+      assignedTo: bilal.user.id,
+      dependsOn: [chain2Up.data._id],
+    },
+  });
+  await api("POST", `/tasks/${chain2Up.data._id}/complete`, { token: bilalToken });
+  const chain2List = await api("GET", "/assistant/messages", { token: sanaToken });
+  const chain2Proposal = chain2List.data.find(
+    (p) => p.kind === "HANDOFF" && p.status === "PENDING" &&
+      p.relatedTask === chain2Down.data._id
+  );
+  check("second chain proposal exists", Boolean(chain2Proposal));
+  const foreignConfirm = await api(
+    "POST",
+    `/assistant/messages/${chain2Proposal._id}/decline`,
+    { token: mariaToken }
+  );
+  check(
+    "unrelated employee cannot decide someone else's handoff",
+    foreignConfirm.status === 403,
+    `got ${foreignConfirm.status}`
+  );
+
+  // ------------------------------------------------------------------
   // Summary
   // ------------------------------------------------------------------
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -75,16 +75,29 @@ exports.proposeSend = async (req, res) => {
   res.status(201).json(proposal);
 };
 
-// The approval step: only the proposal's creator can confirm/decline, and
-// only while it is PENDING. Actual transmission is a Phase 5/6 delivery
-// adapter (WhatsApp Cloud API / SMTP) - until those exist, SENT records the
-// human approval and marks what WOULD have gone out; nothing leaves the
-// system without the further wiring Omair controls.
+// docs/approval-gates.md row 5: the creator, a manager of the related
+// task's department, or a Super Admin may decide a proposal. Everyone
+// else - including unrelated employees - gets 403.
+async function canDecide(user, proposal) {
+  if (String(proposal.createdBy) === String(user._id)) return true;
+  if (user.role === "SUPER_ADMIN") return true;
+  if (user.role === "MANAGER" && proposal.relatedTask) {
+    const t = await Task.findById(proposal.relatedTask).select("department");
+    if (t && t.department === user.department) return true;
+  }
+  return false;
+}
+
+// The approval step: creator/manager/admin, and only while it is PENDING.
+// Actual transmission is a Phase 5/6 delivery adapter (WhatsApp Cloud API /
+// SMTP) - until those exist, SENT records the human approval and marks what
+// WOULD have gone out; nothing leaves the system without the further wiring
+// Omair controls.
 exports.confirmSend = async (req, res) => {
   const proposal = await MessageProposal.findById(req.params.id);
   if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-  if (String(proposal.createdBy) !== String(req.user._id)) {
-    return res.status(403).json({ message: "Only the creator can confirm this proposal" });
+  if (!(await canDecide(req.user, proposal))) {
+    return res.status(403).json({ message: "You cannot approve this proposal" });
   }
   if (proposal.status !== "PENDING") {
     return res.status(400).json({ message: `Proposal is already ${proposal.status}` });
@@ -101,8 +114,8 @@ exports.confirmSend = async (req, res) => {
 exports.declineSend = async (req, res) => {
   const proposal = await MessageProposal.findById(req.params.id);
   if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-  if (String(proposal.createdBy) !== String(req.user._id)) {
-    return res.status(403).json({ message: "Only the creator can decline this proposal" });
+  if (!(await canDecide(req.user, proposal))) {
+    return res.status(403).json({ message: "You cannot decline this proposal" });
   }
   if (proposal.status !== "PENDING") {
     return res.status(400).json({ message: `Proposal is already ${proposal.status}` });
@@ -113,9 +126,25 @@ exports.declineSend = async (req, res) => {
   res.json(proposal);
 };
 
-// My pending proposals (so the UI can show the approval queue).
+// The approval queue: own proposals, plus - for managers - pending items
+// on tasks in their department, and everything for the Super Admin
+// (docs/approval-gates.md row 5: manager/admin may decide department items).
 exports.myProposals = async (req, res) => {
-  const proposals = await MessageProposal.find({ createdBy: req.user._id })
+  let filter = { createdBy: req.user._id };
+
+  if (req.user.role === "SUPER_ADMIN") {
+    filter = {};
+  } else if (req.user.role === "MANAGER") {
+    const deptTaskIds = await Task.find({ department: req.user.department }).select("_id");
+    filter = {
+      $or: [
+        { createdBy: req.user._id },
+        { relatedTask: { $in: deptTaskIds.map((t) => t._id) } },
+      ],
+    };
+  }
+
+  const proposals = await MessageProposal.find(filter)
     .sort({ createdAt: -1 })
     .limit(50);
   res.json(proposals);
