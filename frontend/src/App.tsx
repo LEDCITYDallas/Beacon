@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Consent from "./pages/Consent";
 import EmployeeHome from "./pages/EmployeeHome";
 import ManagerDashboard from "./pages/ManagerDashboard";
+import Assistant from "./pages/Assistant";
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -39,6 +40,9 @@ function Shell({ children }: { children: React.ReactNode }) {
         <h2>LED City</h2>
         <Link className="nav-link" to="/">
           Home
+        </Link>
+        <Link className="nav-link" to="/assistant">
+          Assistant
         </Link>
         {isManagerOrAbove && (
           <Link className="nav-link" to="/team">
@@ -76,6 +80,16 @@ export default function App() {
           <Protected>
             <Shell>
               <EmployeeHome />
+            </Shell>
+          </Protected>
+        }
+      />
+      <Route
+        path="/assistant"
+        element={
+          <Protected>
+            <Shell>
+              <Assistant />
             </Shell>
           </Protected>
         }

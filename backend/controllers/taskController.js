@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Task = require("../models/Task");
 const TimeLog = require("../models/TimeLog");
+const MessageProposal = require("../models/MessageProposal");
 
 // Alphabetical sort would order priorities URGENT > MEDIUM > LOW > HIGH,
 // which is wrong - rank them explicitly instead (Section 4 ordering).
@@ -408,10 +409,16 @@ async function finalizeCompletion(task, actorId, source) {
   addTimelineEvent(task, "COMPLETION_CONFIRMED", actorId, { source });
   await task.save();
 
-  await unblockDependents(task._id);
+  await unblockDependents(task._id, actorId);
 }
 
-async function unblockDependents(completedTaskId) {
+// On unblock, auto-create a PENDING handoff proposal (Section 5.2 +
+// docs/approval-gates.md row 5). The system proposes the notification;
+// a human - the person who completed the upstream task, a manager of the
+// related department, or a Super Admin - confirms the send. Nothing
+// transmits while the proposal is PENDING.
+async function unblockDependents(completedTaskId, actorId) {
+  const completed = await Task.findById(completedTaskId).select("title");
   const dependents = await Task.find({ dependsOn: completedTaskId, status: "BLOCKED" });
 
   for (const dep of dependents) {
@@ -424,8 +431,18 @@ async function unblockDependents(completedTaskId) {
       dep.status = "READY";
       addTimelineEvent(dep, "UNBLOCKED", null, { triggeredBy: completedTaskId });
       await dep.save();
-      // TODO Phase 5: notify dep.assignedTo (WhatsApp/email) that a
-      // dependency is ready for them - Section 5, proactive handoff.
+
+      if (actorId) {
+        await MessageProposal.create({
+          channel: "WHATSAPP", // Section 11: WhatsApp for proactive handoffs
+          kind: "HANDOFF",
+          createdBy: actorId,
+          recipient: dep.assignedTo,
+          relatedTask: dep._id,
+          body: `"${completed ? completed.title : "A task you depended on"}" is complete - your task "${dep.title}" is now ready to start.`,
+          status: "PENDING",
+        });
+      }
     }
   }
 }
