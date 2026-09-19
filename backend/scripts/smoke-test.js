@@ -420,6 +420,81 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // 11. AI assistant (Section 5) + approval gates (docs/approval-gates.md)
+  // ------------------------------------------------------------------
+  console.log("\n[assistant & approval gates]");
+  const ask = await api("POST", "/assistant/ask", {
+    token: bilalToken,
+    body: { question: "What is my current task?" },
+  });
+  check(
+    "Q&A answers from own data (mock provider)",
+    ask.status === 200 && ask.data.text && ask.data.provider === "mock",
+    JSON.stringify(ask.data).slice(0, 120)
+  );
+
+  const draft = await api("POST", "/assistant/draft", {
+    token: bilalToken,
+    body: { kind: "STATUS_UPDATE", request: "Update on my proposal task" },
+  });
+  check("drafting generates reviewable text", draft.status === 200 && draft.data.draft);
+
+  const badKind = await api("POST", "/assistant/draft", {
+    token: bilalToken,
+    body: { kind: "NOPE", request: "x" },
+  });
+  check("invalid draft kind rejected", badKind.status === 400, `got ${badKind.status}`);
+
+  // Outbound message: propose -> confirm / decline lifecycle
+  const propose = await api("POST", "/assistant/messages", {
+    token: bilalToken,
+    body: {
+      channel: "WHATSAPP",
+      kind: "HANDOFF",
+      body: "Mock: proposal is signed, install crew task is ready for you.",
+      recipientId: mariaId,
+    },
+  });
+  check("handoff proposal created as PENDING", propose.status === 201 && propose.data.status === "PENDING");
+
+  const listProposals = await api("GET", "/assistant/messages", { token: bilalToken });
+  check(
+    "proposal queue lists own pending items",
+    listProposals.status === 200 &&
+      listProposals.data.some((p) => p._id === propose.data._id)
+  );
+
+  const confirm = await api("POST", `/assistant/messages/${propose.data._id}/confirm`, {
+    token: bilalToken,
+  });
+  check("creator confirms -> SENT", confirm.status === 200 && confirm.data.status === "SENT");
+
+  const reconfirm = await api("POST", `/assistant/messages/${propose.data._id}/confirm`, {
+    token: bilalToken,
+  });
+  check("double confirm rejected", reconfirm.status === 400, `got ${reconfirm.status}`);
+
+  const propose2 = await api("POST", "/assistant/messages", {
+    token: bilalToken,
+    body: { channel: "EMAIL", kind: "DRAFT_MESSAGE", body: "Mock draft message" },
+  });
+  const foreignDecline = await api(
+    "POST",
+    `/assistant/messages/${propose2.data._id}/decline`,
+    { token: sanaToken }
+  );
+  check(
+    "non-creator cannot decline someone's proposal",
+    foreignDecline.status === 403,
+    `got ${foreignDecline.status}`
+  );
+
+  const decline = await api("POST", `/assistant/messages/${propose2.data._id}/decline`, {
+    token: bilalToken,
+  });
+  check("creator declines -> DECLINED, nothing sent", decline.status === 200 && decline.data.status === "DECLINED");
+
+  // ------------------------------------------------------------------
   // Summary
   // ------------------------------------------------------------------
   console.log(`\n${passed} passed, ${failed} failed`);
