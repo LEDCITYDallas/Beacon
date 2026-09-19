@@ -12,8 +12,75 @@ interface QueueResponse {
   blockedCount: number;
 }
 
+interface WeekStats {
+  current: {
+    tasksCompleted: number;
+    onTimeCompleted: number;
+    onTimePct: number | null;
+    estimateAccuracyPct: number | null;
+    hoursLogged: number;
+  };
+  trend: {
+    tasksCompleted: number;
+    hoursLogged: number;
+  }[];
+}
+
+function YourWeekCard() {
+  const [week, setWeek] = useState<WeekStats | null>(null);
+
+  useEffect(() => {
+    client
+      .get("/stats/my-week")
+      .then((res) => setWeek(res.data))
+      .catch(() => {});
+  }, []);
+
+  if (!week) return null;
+
+  const c = week.current;
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <h3 style={{ margin: "0 0 8px" }}>Your week</h3>
+      <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
+            {c.tasksCompleted}
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>tasks completed</p>
+        </div>
+        <div>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
+            {c.onTimePct === null ? "—" : `${c.onTimePct}%`}
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>on time</p>
+        </div>
+        <div>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
+            {c.estimateAccuracyPct === null ? "—" : `${c.estimateAccuracyPct}%`}
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>estimate accuracy</p>
+        </div>
+        <div>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
+            {c.hoursLogged}h
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>logged</p>
+        </div>
+        <div>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--text-muted)" }}>
+            {week.trend.map((t) => t.tasksCompleted).join(" · ")}
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>previous 3 weeks</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EmployeeHome() {
   const [data, setData] = useState<QueueResponse | null>(null);
+  const [presence, setPresence] = useState<{ status: string } | null>(null);
 
   async function load() {
     const res = await client.get("/tasks/my-queue");
@@ -22,6 +89,10 @@ export default function EmployeeHome() {
 
   useEffect(() => {
     load();
+    client
+      .get("/activity/status")
+      .then((res) => setPresence(res.data))
+      .catch(() => {});
   }, []);
 
   function handleCurrentTaskChange(updated: Task) {
@@ -39,7 +110,28 @@ export default function EmployeeHome() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>What's next</h2>
+      <h2 style={{ marginBottom: 4 }}>
+        What's next{" "}
+        {presence && (
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              padding: "3px 10px",
+              borderRadius: 999,
+              marginLeft: 8,
+              background:
+                presence.status === "ACTIVE"
+                  ? "rgba(34,197,94,0.15)"
+                  : "rgba(245,158,11,0.15)",
+              color: presence.status === "ACTIVE" ? "var(--success)" : "var(--warning)",
+              verticalAlign: "middle",
+            }}
+          >
+            {presence.status === "ACTIVE" ? "Active" : "On break / inactive"}
+          </span>
+        )}
+      </h2>
       <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
         {data.blockedCount > 0
           ? `${data.blockedCount} task(s) waiting on something else — you don't need to think about those right now.`
@@ -98,6 +190,8 @@ export default function EmployeeHome() {
           ))}
         </>
       )}
+
+      <YourWeekCard />
     </div>
   );
 }

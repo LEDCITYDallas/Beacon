@@ -33,4 +33,7 @@ router.post("/:id/propose-completion", wrap(taskController.proposeCompletion)); 
 router.post("/:id/confirm-completion", wrap(taskController.confirmCompletion));
 router.post("/:id/reject-completion", wrap(taskController.rejectCompletion));
 
+// Flag route - Section 3: manager/admin flag tasks needing attention.
+router.post("/:id/flag", requireRole("SUPER_ADMIN", "MANAGER"), wrap(taskController.setTaskFlag));
+
 module.exports = router;

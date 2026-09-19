@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, Link } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
+import client from "./api/client";
 import Login from "./pages/Login";
 import Consent from "./pages/Consent";
 import EmployeeHome from "./pages/EmployeeHome";
@@ -33,6 +34,16 @@ function ManagerRoute({ children }: { children: React.ReactNode }) {
 function Shell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const isManagerOrAbove = user?.role === "MANAGER" || user?.role === "SUPER_ADMIN";
+
+  // Section 6 presence heartbeat - one timestamp per minute while signed
+  // in. No keystroke/content data is collected anywhere (hard exclusions);
+  // idle status derives server-side from the last heartbeat (15-20 min).
+  useEffect(() => {
+    const ping = () => client.post("/activity/heartbeat").catch(() => {});
+    ping();
+    const id = setInterval(ping, 60000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="app-shell">

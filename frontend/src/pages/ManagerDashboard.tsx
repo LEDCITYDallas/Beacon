@@ -3,18 +3,45 @@ import client from "../api/client";
 import { Task } from "../types";
 import StatusBadge from "../components/StatusBadge";
 
+interface Alerts {
+  overdue: TaskRow[];
+  blocked: TaskRow[];
+}
+
+interface TaskRow {
+  _id: string;
+  title: string;
+  priority: string;
+  status: string;
+  dueDate: string;
+  flagged?: boolean;
+  flagNote?: string;
+  assignedTo: { _id: string; name: string; email: string } | string;
+  blockedReason?: { type: string; note: string };
+}
+
 export default function ManagerDashboard() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [alerts, setAlerts] = useState<Alerts | null>(null);
   const [showForm, setShowForm] = useState(false);
 
   async function load() {
-    const res = await client.get("/tasks");
-    setTasks(res.data);
+    const [tasksRes, alertsRes] = await Promise.all([
+      client.get("/tasks"),
+      client.get("/alerts").catch(() => null),
+    ]);
+    setTasks(tasksRes.data);
+    if (alertsRes) setAlerts(alertsRes.data);
   }
 
   useEffect(() => {
     load();
   }, []);
+
+  async function toggleFlag(t: TaskRow) {
+    await client.post(`/tasks/${t._id}/flag`, { flagged: !t.flagged });
+    load();
+  }
 
   return (
     <div>
@@ -24,6 +51,43 @@ export default function ManagerDashboard() {
           {showForm ? "Close" : "+ New task"}
         </button>
       </div>
+
+      {alerts && (alerts.overdue.length > 0 || alerts.blocked.length > 0) && (
+        <div className="card" style={{ border: "1px solid var(--warning)" }}>
+          <h3 style={{ margin: "0 0 8px", color: "var(--warning)" }}>
+            Needs attention (Section 8 alerts)
+          </h3>
+          {alerts.overdue.length > 0 && (
+            <>
+              <p style={{ margin: "4px 0", fontSize: 13, color: "var(--danger)" }}>
+                <strong>{alerts.overdue.length} overdue</strong>
+              </p>
+              {alerts.overdue.slice(0, 5).map((t) => (
+                <p key={t._id} style={{ margin: "2px 0", fontSize: 13, color: "var(--text-muted)" }}>
+                  {t.title} — due {new Date(t.dueDate).toLocaleDateString()} ·{" "}
+                  {typeof t.assignedTo === "object" ? t.assignedTo.name : "unassigned"}
+                </p>
+              ))}
+            </>
+          )}
+          {alerts.blocked.length > 0 && (
+            <>
+              <p style={{ margin: "8px 0 4px", fontSize: 13, color: "var(--warning)" }}>
+                <strong>{alerts.blocked.length} blocked</strong> — aggregate reasons only,
+                never used to single anyone out (Section 4)
+              </p>
+              {alerts.blocked.slice(0, 5).map((t) => (
+                <p key={t._id} style={{ margin: "2px 0", fontSize: 13, color: "var(--text-muted)" }}>
+                  {t.title} —{" "}
+                  {t.blockedReason?.type === "NOT_CONFIDENT"
+                    ? "needs guidance"
+                    : "waiting on other"}
+                </p>
+              ))}
+            </>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <CreateTaskForm
@@ -44,12 +108,16 @@ export default function ManagerDashboard() {
               <th>Status</th>
               <th>Due</th>
               <th>Blocked reason</th>
+              <th>Flag</th>
             </tr>
           </thead>
           <tbody>
             {tasks.map((t) => (
               <tr key={t._id}>
-                <td>{t.title}</td>
+                <td>
+                  {t.flagged && <span title={t.flagNote || ""}>🚩 </span>}
+                  {t.title}
+                </td>
                 <td>{typeof t.assignedTo === "object" ? t.assignedTo.name : t.assignedTo}</td>
                 <td>{t.priority}</td>
                 <td><StatusBadge status={t.status} /></td>
@@ -59,11 +127,22 @@ export default function ManagerDashboard() {
                   {t.blockedReason?.type === "NOT_CONFIDENT" && "Needs guidance"}
                   {!t.blockedReason?.type && "—"}
                 </td>
+                <td>
+                  {t.status !== "COMPLETED" && (
+                    <button
+                      className="btn btn-outline"
+                      style={{ padding: "4px 10px", fontSize: 12 }}
+                      onClick={() => toggleFlag(t)}
+                    >
+                      {t.flagged ? "Unflag" : "Flag"}
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
             {tasks.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ color: "var(--text-muted)", textAlign: "center" }}>
+                <td colSpan={7} style={{ color: "var(--text-muted)", textAlign: "center" }}>
                   No tasks yet.
                 </td>
               </tr>

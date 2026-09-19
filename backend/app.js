@@ -21,6 +21,9 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === "") {
 const authRoutes = require("./routes/authRoutes");
 const taskRoutes = require("./routes/taskRoutes");
 const assistantRoutes = require("./routes/assistantRoutes");
+const activityRoutes = require("./routes/activityRoutes");
+const statsRoutes = require("./routes/statsRoutes");
+const alertRoutes = require("./routes/alertRoutes");
 
 const app = express();
 
@@ -74,6 +77,9 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/assistant", assistantRoutes);
+app.use("/api/activity", activityRoutes);
+app.use("/api/stats", statsRoutes);
+app.use("/api/alerts", alertRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });

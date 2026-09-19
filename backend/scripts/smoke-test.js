@@ -613,6 +613,84 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // 13. Self-view stats, manager alerts, flag, presence (Sec 3/6/8)
+  // ------------------------------------------------------------------
+  console.log("\n[self-view, alerts, flags, presence]");
+
+  const week = await api("GET", "/stats/my-week", { token: bilalToken });
+  check(
+    "self-view week stats (completed > 0, 4-week trend)",
+    week.status === 200 &&
+      week.data.current.tasksCompleted >= 1 &&
+      Array.isArray(week.data.trend) &&
+      week.data.trend.length === 3,
+    JSON.stringify(week.data.current)
+  );
+  check(
+    "self-view reports hours + on-time inputs",
+    typeof week.data.current.hoursLogged === "number" &&
+      (week.data.current.onTimePct === null || typeof week.data.current.onTimePct === "number")
+  );
+
+  const alertsAsEmp = await api("GET", "/alerts", { token: bilalToken });
+  check("alerts blocked for employees", alertsAsEmp.status === 403, `got ${alertsAsEmp.status}`);
+
+  const alerts = await api("GET", "/alerts", { token: sanaToken });
+  check(
+    "manager sees overdue/blocked lists (dept-scoped)",
+    alerts.status === 200 &&
+      Array.isArray(alerts.data.overdue) &&
+      Array.isArray(alerts.data.blocked) &&
+      alerts.data.blocked.some((t) => t.title.includes("prio-low")),
+    `overdue=${alerts.data.overdue.length} blocked=${alerts.data.blocked.length}`
+  );
+
+  // Flag: manager flags bilal's blocked probe task; employee cannot flag.
+  const flaggedTask = alerts.data.blocked.find((t) => t.title.includes("prio-low"));
+  const flagByMgr = await api("POST", `/tasks/${flaggedTask._id}/flag`, {
+    token: sanaToken,
+    body: { flagged: true, note: "needs guidance - knowledge gap" },
+  });
+  check(
+    "manager flags a task (Sec 3)",
+    flagByMgr.status === 200 &&
+      flagByMgr.data.flagged === true &&
+      flagByMgr.data.flagNote.includes("guidance"),
+    `got ${flagByMgr.status}`
+  );
+
+  const flagByEmp = await api("POST", `/tasks/${flaggedTask._id}/flag`, {
+    token: bilalToken,
+    body: { flagged: false },
+  });
+  check("employee cannot flag", flagByEmp.status === 403, `got ${flagByEmp.status}`);
+
+  // Presence (Sec 6): presence-only, idle threshold 15-20 min.
+  const hb = await api("POST", "/activity/heartbeat", { token: bilalToken });
+  check(
+    "heartbeat returns ACTIVE + threshold in 15-20 window",
+    hb.status === 200 && hb.data.status === "ACTIVE" &&
+      hb.data.thresholdMinutes >= 15 && hb.data.thresholdMinutes <= 20,
+    JSON.stringify(hb.data)
+  );
+
+  const status = await api("GET", "/activity/status", { token: bilalToken });
+  check("recent heartbeat -> ACTIVE", status.data.status === "ACTIVE");
+
+  // yusuf never heartbeats -> INACTIVE (idle branch, without waiting).
+  const yusufLogin = await api("POST", "/auth/login", {
+    body: { email: "yusuf@mock.ledcity.test", password: "MockPass123!" },
+  });
+  const yusufStatus = await api("GET", "/activity/status", {
+    token: yusufLogin.data.token,
+  });
+  check(
+    "no heartbeat -> INACTIVE",
+    yusufStatus.status === 200 && yusufStatus.data.status === "INACTIVE",
+    JSON.stringify(yusufStatus.data)
+  );
+
+  // ------------------------------------------------------------------
   // Summary
   // ------------------------------------------------------------------
   console.log(`\n${passed} passed, ${failed} failed`);
