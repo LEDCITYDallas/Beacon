@@ -6,10 +6,12 @@
 **Re:** Section 12 of the requirements — "Confirm before build" decisions, plus
 build status and remaining delivery plan.
 
-Phase 1+2 (foundation + task/dependency engine) is built, security-hardened,
-and verified by a 43-check automated end-to-end test suite. Before Phase 3
-(AI assistant) begins, the decisions below need your sign-off — the
-requirements document lists them as "Confirm Before Build" items.
+Phases 1–5 (foundation, task/dependency engine, AI assistant, activity
+monitoring & live view, scorecard/alerts/digest/retention) plus the mock
+integration-signal pipeline are built, security-hardened, and verified by a
+69-check automated end-to-end test suite. The remaining items are the
+decisions below, production wiring on the Mac mini, and the code-review gate —
+the requirements document lists these as "Confirm Before Build" items.
 
 Each item includes my recommendation so you can approve quickly or override.
 

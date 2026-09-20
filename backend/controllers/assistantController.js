@@ -1,21 +1,79 @@
 const assistantService = require("../services/ai/assistantService");
+const aiProvider = require("../services/ai/provider");
 const MessageProposal = require("../models/MessageProposal");
 const Task = require("../models/Task");
+const delivery = require("../services/delivery");
+const { audit } = require("../utils/audit");
 const mongoose = require("mongoose");
+
+// ---------------------------------------------------------------------
+// AI assistant endpoints (Priority 1 / Section 5).
+//
+// Approval gates are enforced HERE, in the backend, not only in the UI
+// (docs/approval-gates.md):
+//   - /ask and /next-up are read-only
+//   - /draft returns text and stores nothing as "sent"
+//   - /messages creates a PENDING proposal; the explicit /confirm routes are
+//     the only path that can transmit, and they call the delivery adapter
+//   - completion is never touched by the assistant (no code path exists)
+//
+// Provider failures are mapped to safe, specific responses instead of a 500
+// with an internal message.
+// ---------------------------------------------------------------------
 
 function isValidObjectId(id) {
   return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
 }
 
+function aiFailure(res, err) {
+  const code = err.code || "AI_PROVIDER_ERROR";
+  const status = err.status && err.status >= 400 ? err.status : 502;
+  const messages = {
+    AI_NOT_CONFIGURED:
+      "The assistant is not configured on the server yet. An administrator must add the provider key.",
+    AI_TIMEOUT: "The assistant took too long to respond. Try again in a moment.",
+    AI_RATE_LIMITED: "The AI provider is temporarily rate limiting us. Try again shortly.",
+    AI_USAGE_LIMIT: err.message,
+    AI_AUTH_FAILED: "The assistant is misconfigured (provider rejected the key). An administrator must fix it.",
+    AI_INVALID_RESPONSE: "The assistant returned an unusable response. Try again.",
+    AI_REQUEST_REJECTED: "The assistant request was rejected by the provider.",
+  };
+  return res.status(status).json({
+    message: messages[code] || "The assistant could not answer right now. Try again.",
+    code,
+  });
+}
+
 // Section 5 feature 3: on-demand Q&A. Read-only, no approval needed
-// (approval-gates matrix row 1). Scoped to the requester's own data.
+// (approval-gates matrix row 1). Scoped to the requester's own permissions.
 exports.ask = async (req, res) => {
   const { question } = req.body;
   if (!question || !String(question).trim()) {
     return res.status(400).json({ message: "question is required" });
   }
-  const answer = await assistantService.answerQuestion(req.user, String(question).slice(0, 2000));
-  res.json(answer);
+  try {
+    const answer = await assistantService.answerQuestion(req.user, String(question).slice(0, 2000));
+    res.json({
+      text: answer.text,
+      provider: answer.provider,
+      model: answer.model,
+      fallback: Boolean(answer.fallback),
+      usage: answer.usage,
+      approvalRequired: false,
+      note: "Read-only answer from your own task data. The assistant cannot change anything.",
+    });
+  } catch (err) {
+    return aiFailure(res, err);
+  }
+};
+
+// Section 5 feature 1: personalised next-up assistance. Deterministic ranking
+// over the employee's own task + dependency data, explained per item.
+exports.nextUp = async (req, res) => {
+  const queue = await assistantService.nextUpQueue(req.user, {
+    limit: Math.min(10, Math.max(1, Number(req.query.limit) || 5)),
+  });
+  res.json(queue);
 };
 
 // Section 5 feature 4: drafting. Produces text only - nothing is sent
@@ -30,19 +88,56 @@ exports.draft = async (req, res) => {
     return res.status(400).json({ message: "request is required" });
   }
 
-  const result = await assistantService.draftWorkProduct(
-    req.user,
-    kind,
-    String(request).slice(0, 2000)
-  );
-
-  // A draft becomes a MessageProposal only when the employee chooses to
-  // queue it for sending - handled by propose-send below.
-  res.json({ draft: result.text, provider: result.provider, model: result.model });
+  try {
+    const result = await assistantService.draftWorkProduct(
+      req.user,
+      kind,
+      String(request).slice(0, 2000)
+    );
+    res.json({
+      draft: result.text,
+      provider: result.provider,
+      model: result.model,
+      fallback: Boolean(result.fallback),
+      usage: result.usage,
+      approvalRequired: true,
+      note: "Draft only - it is not stored or sent. Queue it for sending and approve it explicitly.",
+    });
+  } catch (err) {
+    return aiFailure(res, err);
+  }
 };
 
-// Queue a draft/handoff for sending. Creates a PENDING proposal - nothing
-// is transmitted yet (approval-gates matrix row 3/5).
+// A generated summary of the requester's own work (Section 5: summaries).
+exports.summary = async (req, res) => {
+  try {
+    const result = await assistantService.summarizeWork(req.user);
+    res.json({
+      summary: result.text,
+      provider: result.provider,
+      model: result.model,
+      fallback: Boolean(result.fallback),
+      usage: result.usage,
+      approvalRequired: false,
+    });
+  } catch (err) {
+    return aiFailure(res, err);
+  }
+};
+
+// Provider + usage visibility for the account holder (never any key value).
+exports.providerInfo = async (req, res) => {
+  const info = aiProvider.describeProvider();
+  res.json({
+    ...info,
+    // Never echo the key - only whether one exists.
+    apiKeySet: Boolean(aiProvider.isConfigured(info.provider)) && info.provider !== "mock",
+    liveAnswers: info.live,
+  });
+};
+
+// Queue a draft/handoff for sending. Creates a PENDING proposal - nothing is
+// transmitted yet (approval-gates matrix rows 3/5).
 exports.proposeSend = async (req, res) => {
   const { channel, kind, body, recipientId, taskId } = req.body;
 
@@ -62,6 +157,23 @@ exports.proposeSend = async (req, res) => {
     return res.status(400).json({ message: "taskId must be a valid task id" });
   }
 
+  // A non-manager can only address a teammate connected to their own work;
+  // otherwise a proposal could be used to message anyone at will.
+  if (recipientId) {
+    const recipient = await Task.db
+      .model("User")
+      .findById(recipientId)
+      .select("_id department");
+    if (!recipient) return res.status(400).json({ message: "Recipient not found" });
+    const allowed =
+      req.user.role === "SUPER_ADMIN" ||
+      recipient.department === req.user.department ||
+      recipientId === String(req.user._id);
+    if (!allowed) {
+      return res.status(403).json({ message: "You can only message people in your own department" });
+    }
+  }
+
   const proposal = await MessageProposal.create({
     channel,
     kind,
@@ -72,12 +184,16 @@ exports.proposeSend = async (req, res) => {
     status: "PENDING",
   });
 
-  res.status(201).json(proposal);
+  res.status(201).json({
+    ...proposal.toObject(),
+    requiresApproval: true,
+    note: "Pending approval. Nothing is transmitted until a human confirms (approval-gates row 3/5).",
+  });
 };
 
-// docs/approval-gates.md row 5: the creator, a manager of the related
-// task's department, or a Super Admin may decide a proposal. Everyone
-// else - including unrelated employees - gets 403.
+// docs/approval-gates.md row 5: the creator, a manager of the related task's
+// department, or a Super Admin may decide a proposal. Everyone else -
+// including unrelated employees - gets 403.
 async function canDecide(user, proposal) {
   if (String(proposal.createdBy) === String(user._id)) return true;
   if (user.role === "SUPER_ADMIN") return true;
@@ -88,11 +204,9 @@ async function canDecide(user, proposal) {
   return false;
 }
 
-// The approval step: creator/manager/admin, and only while it is PENDING.
-// Actual transmission is a Phase 5/6 delivery adapter (WhatsApp Cloud API /
-// SMTP) - until those exist, SENT records the human approval and marks what
-// WOULD have gone out; nothing leaves the system without the further wiring
-// Omair controls.
+// The approval step: creator/manager/admin, and only while PENDING. On confirm
+// the message is handed to the REAL delivery adapter, and the outcome is
+// recorded separately from the approval.
 exports.confirmSend = async (req, res) => {
   const proposal = await MessageProposal.findById(req.params.id);
   if (!proposal) return res.status(404).json({ message: "Proposal not found" });
@@ -103,12 +217,31 @@ exports.confirmSend = async (req, res) => {
     return res.status(400).json({ message: `Proposal is already ${proposal.status}` });
   }
 
-  // TODO Phase 5/6: hand to the real WhatsApp/email delivery adapter here.
+  const { delivery: outcome } = await delivery.deliverProposal(proposal, { sentBy: req.user._id });
+
   proposal.status = "SENT";
   proposal.sentAt = new Date();
+  proposal.approvedBy = req.user._id;
+  proposal.decidedAt = new Date();
   await proposal.save();
 
-  res.json(proposal);
+  await audit(req, {
+    action: "MESSAGE_PROPOSAL_CONFIRMED",
+    targetType: "MessageProposal",
+    targetId: proposal._id,
+    meta: { channel: proposal.channel, kind: proposal.kind, delivery: outcome },
+  });
+
+  res.json({
+    ...proposal.toObject(),
+    deliveryOutcome: outcome,
+    note:
+      outcome.status === "SIMULATED"
+        ? "Approved and recorded. The delivery driver is mock, so nothing left the machine yet."
+        : outcome.status === "SENT"
+          ? "Approved and transmitted."
+          : "Approved, but transmission did not succeed - see deliveryOutcome.error.",
+  });
 };
 
 exports.declineSend = async (req, res) => {
@@ -122,13 +255,22 @@ exports.declineSend = async (req, res) => {
   }
 
   proposal.status = "DECLINED";
+  proposal.declinedBy = req.user._id;
+  proposal.decidedAt = new Date();
   await proposal.save();
+
+  await audit(req, {
+    action: "MESSAGE_PROPOSAL_DECLINED",
+    targetType: "MessageProposal",
+    targetId: proposal._id,
+    meta: { channel: proposal.channel, kind: proposal.kind },
+  });
+
   res.json(proposal);
 };
 
-// The approval queue: own proposals, plus - for managers - pending items
-// on tasks in their department, and everything for the Super Admin
-// (docs/approval-gates.md row 5: manager/admin may decide department items).
+// The approval queue: own proposals, plus - for managers - pending items on
+// tasks in their department, and everything for the Super Admin (row 5).
 exports.myProposals = async (req, res) => {
   let filter = { createdBy: req.user._id };
 
@@ -145,7 +287,15 @@ exports.myProposals = async (req, res) => {
   }
 
   const proposals = await MessageProposal.find(filter)
+    .populate("recipient", "name department")
     .sort({ createdAt: -1 })
     .limit(50);
-  res.json(proposals);
+
+  res.json(
+    proposals.map((p) => ({
+      ...p.toObject(),
+      recipientName: p.recipient ? p.recipient.name : "",
+      requiresApproval: p.status === "PENDING",
+    }))
+  );
 };

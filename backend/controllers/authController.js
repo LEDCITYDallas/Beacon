@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { audit } = require("../utils/audit");
 
 function signToken(user) {
   return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
@@ -55,5 +56,14 @@ exports.acceptConsent = async (req, res) => {
   req.user.consentAccepted = true;
   req.user.consentAcceptedAt = new Date();
   await req.user.save();
+
+  // Section 9: the consent moment is itself an auditable event.
+  await audit(req, {
+    action: "CONSENT_ACCEPTED",
+    targetType: "User",
+    targetId: req.user._id,
+    meta: { consentVersion: "placeholder-2026-09-19" },
+  });
+
   res.json({ message: "Consent recorded", consentAcceptedAt: req.user.consentAcceptedAt });
 };

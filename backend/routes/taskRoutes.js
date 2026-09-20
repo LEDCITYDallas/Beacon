@@ -36,4 +36,7 @@ router.post("/:id/reject-completion", wrap(taskController.rejectCompletion));
 // Flag route - Section 3: manager/admin flag tasks needing attention.
 router.post("/:id/flag", requireRole("SUPER_ADMIN", "MANAGER"), wrap(taskController.setTaskFlag));
 
+// Reopen route - Section 7 rework input: manager/admin reopen a completed task.
+router.post("/:id/reopen", requireRole("SUPER_ADMIN", "MANAGER"), wrap(taskController.reopenTask));
+
 module.exports = router;

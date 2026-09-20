@@ -2,6 +2,12 @@ const mongoose = require("mongoose");
 const Task = require("../models/Task");
 const TimeLog = require("../models/TimeLog");
 const MessageProposal = require("../models/MessageProposal");
+const User = require("../models/User");
+const assistantService = require("../services/ai/assistantService");
+const composer = require("../services/notifications/composer");
+const delivery = require("../services/delivery");
+const config = require("../config/env");
+const { audit } = require("../utils/audit");
 
 // Alphabetical sort would order priorities URGENT > MEDIUM > LOW > HIGH,
 // which is wrong - rank them explicitly instead (Section 4 ordering).
@@ -87,6 +93,7 @@ exports.createTask = async (req, res) => {
     department,
     assignedTo,
     dependsOn,
+    externalRefs,
   } = req.body;
 
   if (!title || !definitionOfDone || !estimatedHours || !dueDate || !assignedTo) {
@@ -135,6 +142,25 @@ exports.createTask = async (req, res) => {
     });
   }
 
+  // Optional explicit link to an external record (Zoho CRM/Books/Inventory,
+  // WorkDrive, CMS). When set, completion-signal matching is exact rather than
+  // heuristic - see services/integrations/signalScanner.js.
+  let refs = [];
+  if (externalRefs !== undefined) {
+    if (!Array.isArray(externalRefs) || externalRefs.length > 10) {
+      return res.status(400).json({ message: "externalRefs must be an array of at most 10 entries" });
+    }
+    for (const r of externalRefs) {
+      if (!r || !r.source || !String(r.source).trim() || !r.externalId || !String(r.externalId).trim()) {
+        return res.status(400).json({ message: "each externalRef needs source and externalId" });
+      }
+    }
+    refs = externalRefs.map((r) => ({
+      source: String(r.source).toUpperCase().slice(0, 40),
+      externalId: String(r.externalId).slice(0, 120),
+    }));
+  }
+
   const task = new Task({
     title,
     description,
@@ -145,6 +171,7 @@ exports.createTask = async (req, res) => {
     department: assignee.department, // always the assignee's department, never client-supplied
     assignedTo,
     dependsOn: dependsOn || [],
+    externalRefs: refs,
     createdBy: req.user._id,
     status,
   });
@@ -309,8 +336,65 @@ async function checkOverrun(task) {
       estimatedHours: task.estimatedHours,
       thresholdPct: task.overrunThresholdPct,
     });
-    // TODO Phase 5: fire actual notification to employee + manager
-    // (email/in-app). Hook goes here.
+    // Priority 5 / Section 8: the overrun alert is now delivered instead of
+    // being a TODO. In-app always; email only when LED City switches it on, so
+    // nobody is emailed by surprise.
+    await notifyOverrun(task);
+  }
+}
+
+// In-app notification to the employee and their department manager, plus an
+// optional email. Wrapped so any delivery problem cannot break the timer flow.
+async function notifyOverrun(task) {
+  try {
+    const employee = await User.findById(task.assignedTo).select(
+      "name email notifyEmail whatsappNumber timezone department"
+    );
+    const manager = await User.findOne({
+      role: "MANAGER",
+      department: task.department,
+      isActive: true,
+    }).select("name email notifyEmail timezone department");
+
+    const rendered = composer.renderOverrun({
+      task,
+      employee,
+      manager,
+      timezone: employee ? employee.timezone : undefined,
+    });
+
+    if (employee) {
+      await delivery.sendInApp({
+        recipient: employee,
+        kind: "OVERRUN_ALERT",
+        subject: rendered.subject,
+        body: rendered.text,
+        relatedTask: task._id,
+        meta: { estimatedHours: task.estimatedHours, thresholdPct: task.overrunThresholdPct },
+      });
+    }
+    if (manager) {
+      await delivery.sendInApp({
+        recipient: manager,
+        kind: "OVERRUN_ALERT",
+        subject: rendered.subject,
+        body: rendered.text,
+        relatedTask: task._id,
+        meta: { department: task.department, employeeName: employee ? employee.name : "" },
+      });
+      if (config.notifications.autoOverrunEmail) {
+        await delivery.sendEmail({
+          recipient: manager,
+          kind: "OVERRUN_ALERT",
+          subject: rendered.subject,
+          body: rendered.text,
+          relatedTask: task._id,
+          meta: { source: "overrun_auto_email" },
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[overrun] notification failed:", err.message);
   }
 }
 
@@ -351,6 +435,12 @@ exports.completeTaskManually = async (req, res) => {
   }
 
   await finalizeCompletion(task, req.user._id, "MANUAL");
+  await audit(req, {
+    action: "TASK_COMPLETED",
+    targetType: "Task",
+    targetId: task._id,
+    meta: { source: "MANUAL", title: task.title },
+  });
   res.json(task);
 };
 
@@ -383,8 +473,22 @@ exports.confirmCompletion = async (req, res) => {
   }
 
   task.pendingCompletionProposal.isPending = false;
-  addTimelineEvent(task, "COMPLETION_CONFIRMED", req.user._id);
+  addTimelineEvent(task, "COMPLETION_CONFIRMED", req.user._id, {
+    source: "SYSTEM_DETECTED",
+    evidence: task.pendingCompletionProposal.evidence || null,
+  });
   await finalizeCompletion(task, req.user._id, "SYSTEM_DETECTED");
+  await audit(req, {
+    action: "TASK_COMPLETED",
+    targetType: "Task",
+    targetId: task._id,
+    meta: {
+      source: "SYSTEM_DETECTED",
+      title: task.title,
+      evidenceSource: task.pendingCompletionProposal.evidence?.source || "",
+      detectedSignal: task.pendingCompletionProposal.detectedSignal,
+    },
+  });
   res.json(task);
 };
 
@@ -440,15 +544,36 @@ async function unblockDependents(completedTaskId, actorId) {
       await dep.save();
 
       if (actorId) {
-        await MessageProposal.create({
+        const assignee = await User.findById(dep.assignedTo).select(
+          "name email notifyEmail whatsappNumber timezone"
+        );
+        // Priority 1 + Section 5.2: the handoff TEXT is drafted by the AI
+        // service (degrading safely to a template if the provider is down).
+        // It is stored as a PENDING proposal, so a human still decides to send
+        // it - nothing is transmitted by unblocking a dependency.
+        const draft = await assistantService.draftHandoff({
+          completedTask: completed,
+          dependentTask: dep,
+          assignee,
+          actor: { _id: actorId },
+        });
+
+        const proposal = await MessageProposal.create({
           channel: "WHATSAPP", // Section 11: WhatsApp for proactive handoffs
           kind: "HANDOFF",
           createdBy: actorId,
           recipient: dep.assignedTo,
           relatedTask: dep._id,
-          body: `"${completed ? completed.title : "A task you depended on"}" is complete - your task "${dep.title}" is now ready to start.`,
+          body: draft.text,
           status: "PENDING",
         });
+
+        addTimelineEvent(dep, "UNBLOCKED", null, {
+          handoffProposalId: String(proposal._id),
+          handoffProvider: draft.provider,
+          requiresHumanApproval: true,
+        });
+        await dep.save();
       }
     }
   }
@@ -459,6 +584,38 @@ exports.getTaskTimeline = async (req, res) => {
   if (!task) return;
   await task.populate("timeline.actor", "name");
   res.json(task.timeline);
+};
+
+// ---------------------------------------------------------------------
+// REOPEN (Section 7: rework/reopened count scorecard input). Manager
+// (same department) or Super Admin reopens a completed task; the assignee
+// keeps working via the normal flow. reopenCount increments for the
+// scorecard. A reopened task returns to READY with the timer reset free.
+// ---------------------------------------------------------------------
+exports.reopenTask = async (req, res) => {
+  const task = await loadAuthorizedTask(req, res, "manage");
+  if (!task) return;
+  if (task.status !== "COMPLETED") {
+    return res.status(400).json({ message: "Only completed tasks can be reopened" });
+  }
+
+  task.status = "READY";
+  task.completionSource = null;
+  task.completedAt = null;
+  task.reopenCount += 1;
+  addTimelineEvent(task, "TASK_REOPENED", req.user._id, {
+    reopenCount: task.reopenCount,
+  });
+  await task.save();
+
+  await audit(req, {
+    action: "TASK_REOPENED",
+    targetType: "Task",
+    targetId: task._id,
+    meta: { reopenCount: task.reopenCount, title: task.title },
+  });
+
+  res.json(task);
 };
 
 // ---------------------------------------------------------------------

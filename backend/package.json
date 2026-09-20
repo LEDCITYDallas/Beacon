@@ -10,6 +10,8 @@
     "start": "node server.js",
     "seed": "node seed/seedMockData.js",
     "retention": "node scripts/retention.js",
+    "digest": "node scripts/run-digest.js",
+    "agent": "node scripts/activity-agent.js",
     "test": "node scripts/smoke-test.js"
   },
   "dependencies": {
@@ -22,7 +24,8 @@
     "helmet": "^7.1.0",
     "hpp": "^0.2.3",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.5.0"
+    "mongoose": "^8.5.0",
+    "nodemailer": "^6.10.1"
   },
   "devDependencies": {
     "mongodb-memory-server": "^10.0.0",

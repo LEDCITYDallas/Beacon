@@ -24,6 +24,13 @@ const assistantRoutes = require("./routes/assistantRoutes");
 const activityRoutes = require("./routes/activityRoutes");
 const statsRoutes = require("./routes/statsRoutes");
 const alertRoutes = require("./routes/alertRoutes");
+const scorecardRoutes = require("./routes/scorecardRoutes");
+const digestRoutes = require("./routes/digestRoutes");
+const liveViewRoutes = require("./routes/liveViewRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const userRoutes = require("./routes/userRoutes");
+const integrationRoutes = require("./routes/integrationRoutes");
+const config = require("./config/env");
 
 const app = express();
 
@@ -31,9 +38,7 @@ const app = express();
 
 app.use(helmet());
 
-const allowedOrigins = (process.env.FRONTEND_ORIGIN || "http://localhost:5173")
-  .split(",")
-  .map((o) => o.trim());
+const allowedOrigins = config.frontendOrigins;
 
 app.use(
   cors({
@@ -53,7 +58,7 @@ app.use(hpp());
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: config.security.generalRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -61,17 +66,34 @@ app.use("/api", generalLimiter);
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: config.security.loginRateLimitMax,
   message: { message: "Too many login attempts. Try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use("/api/auth/login", loginLimiter);
 
+// The live-view frame upload is short-interval by nature, so it gets its own
+// generous-but-bounded bucket instead of the general one throttling it.
+const frameLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  message: { message: "Too many live-view frames." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/liveview/sessions/", frameLimiter);
+
 // --------------------------------------------------------------------
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", service: "led-city-workforce-backend", phase: "1+2" });
+  res.json({
+    status: "ok",
+    service: "led-city-workforce-backend",
+    phase: "1-6",
+    mockMode: config.mockMode,
+    aiProvider: config.ai.provider,
+  });
 });
 
 app.use("/api/auth", authRoutes);
@@ -80,6 +102,12 @@ app.use("/api/assistant", assistantRoutes);
 app.use("/api/activity", activityRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/alerts", alertRoutes);
+app.use("/api/scorecard", scorecardRoutes);
+app.use("/api/digest", digestRoutes);
+app.use("/api/liveview", liveViewRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/integrations", integrationRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });

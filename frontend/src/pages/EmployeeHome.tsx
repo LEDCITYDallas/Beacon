@@ -4,6 +4,9 @@ import { Task } from "../types";
 import StatusBadge from "../components/StatusBadge";
 import TaskTimer from "../components/TaskTimer";
 import BlockedWhyForm from "../components/BlockedWhyForm";
+import CompletionProposals from "../components/CompletionProposals";
+import { formatDate, relativeFrom } from "../utils/format";
+import { useAuth } from "../context/AuthContext";
 
 interface QueueResponse {
   current: Task | null;
@@ -79,20 +82,25 @@ function YourWeekCard() {
 }
 
 export default function EmployeeHome() {
+  const { user } = useAuth();
   const [data, setData] = useState<QueueResponse | null>(null);
-  const [presence, setPresence] = useState<{ status: string } | null>(null);
+  const [presence, setPresence] = useState<{
+    status: string;
+    activityConfidence?: string;
+    lastActivityAt?: string | null;
+  } | null>(null);
 
   async function load() {
-    const res = await client.get("/tasks/my-queue");
-    setData(res.data);
+    const [queue, status] = await Promise.all([
+      client.get("/tasks/my-queue"),
+      client.get("/activity/status").catch(() => null),
+    ]);
+    setData(queue.data);
+    if (status) setPresence(status.data);
   }
 
   useEffect(() => {
     load();
-    client
-      .get("/activity/status")
-      .then((res) => setPresence(res.data))
-      .catch(() => {});
   }, []);
 
   function handleCurrentTaskChange(updated: Task) {
@@ -128,7 +136,11 @@ export default function EmployeeHome() {
               verticalAlign: "middle",
             }}
           >
-            {presence.status === "ACTIVE" ? "Active" : "On break / inactive"}
+            {presence.status === "ACTIVE"
+              ? presence.activityConfidence === "CONFIRMED"
+                ? "Active"
+                : "Active (activity unknown)"
+              : "On break / inactive"}
           </span>
         )}
       </h2>
@@ -136,7 +148,16 @@ export default function EmployeeHome() {
         {data.blockedCount > 0
           ? `${data.blockedCount} task(s) waiting on something else — you don't need to think about those right now.`
           : "Nothing blocked right now."}
+        {presence?.lastActivityAt && (
+          <span style={{ display: "block", fontSize: 12, marginTop: 4 }}>
+            Last activity signal: {relativeFrom(presence.lastActivityAt)}
+          </span>
+        )}
       </p>
+
+      {/* Anything an external system suggested as finished waits here for the
+          employee's own confirmation (Section 4). */}
+      <CompletionProposals onDecided={load} />
 
       {data.current ? (
         <div className="card card-current-task">
@@ -148,9 +169,13 @@ export default function EmployeeHome() {
           <p style={{ fontSize: 13 }}>
             <strong>Definition of done:</strong> {data.current.definitionOfDone}
           </p>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Due {formatDate(data.current.dueDate, user?.timezone)} · {data.current.estimatedHours}h
+            estimated
+          </p>
           {data.current.overrunAlertFired && (
             <p style={{ color: "var(--warning)", fontSize: 13 }}>
-              ⚠ This task has run past its estimated time.
+              ⚠ This task has run past its estimated time. Worth a quick check on the estimate.
             </p>
           )}
 
@@ -178,11 +203,15 @@ export default function EmployeeHome() {
         <>
           <h3 style={{ marginTop: 28 }}>Up next</h3>
           {data.nextUp.map((t) => (
-            <div key={t._id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div
+              key={t._id}
+              className="card"
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+            >
               <div>
                 <strong>{t.title}</strong>
                 <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
-                  Due {new Date(t.dueDate).toLocaleDateString()} · {t.estimatedHours}h est.
+                  Due {formatDate(t.dueDate, user?.timezone)} · {t.estimatedHours}h est.
                 </p>
               </div>
               <StatusBadge status={t.status} />

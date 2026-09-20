@@ -23,6 +23,7 @@ const timelineEventSchema = new mongoose.Schema(
         "OVERRUN_ALERT",
         "TASK_FLAGGED", // Section 3: manager flags a task needing attention
         "TASK_UNFLAGGED",
+        "TASK_REOPENED", // Section 7: rework/reopened count is a scorecard input
       ],
       required: true,
     },
@@ -75,16 +76,43 @@ const taskSchema = new mongoose.Schema(
     flaggedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     flaggedAt: { type: Date, default: null },
 
-    // Completion detection (Section 4 - the core requirement). Phase 1/2
-    // ships the manual path + the human-in-the-loop proposal structure.
-    // Real Zoho/WorkDrive/CMS signal-reading is Phase 6 and plugs into
-    // proposeCompletion() below - it never auto-finalizes.
+    // Section 7: rework tracking. Increments each time a completed task is
+    // reopened; feeds the scorecard's rework/reopened-count input.
+    reopenCount: { type: Number, default: 0 },
+
+    // Completion detection (Section 4 - the core requirement).
+    // Manual completion is always available; every non-manual path (Zoho,
+    // WorkDrive, CMS signals) can only RAISE a proposal here. It never
+    // finalizes - the assignee confirms (see confirmCompletion in
+    // controllers/taskController.js).
+    //
+    // `evidence` exists so the reviewer can see WHY the system proposed the
+    // task, per Section 4: source, external id, human-readable summary, the
+    // link to the record, when it happened, and the match confidence.
     completionSource: { type: String, enum: COMPLETION_SOURCE, default: null },
     pendingCompletionProposal: {
       isPending: { type: Boolean, default: false },
       detectedSignal: { type: String, default: "" }, // e.g. "Zoho CRM: deal marked Won"
       proposedAt: { type: Date, default: null },
+      proposedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      confidence: { type: Number, default: 0 }, // 0-1 from the signal mapper
+      evidence: {
+        source: { type: String, default: "" },
+        externalId: { type: String, default: "" },
+        summary: { type: String, default: "" },
+        evidenceUrl: { type: String, default: "" },
+        occurredAt: { type: Date, default: null },
+      },
     },
+
+    // Optional explicit link between a task and an external record, so signal
+    // matching is exact instead of heuristic when Omair sets it up.
+    externalRefs: [
+      {
+        source: { type: String, default: "" },
+        externalId: { type: String, default: "" },
+      },
+    ],
 
     completedAt: { type: Date, default: null },
 
@@ -95,6 +123,10 @@ const taskSchema = new mongoose.Schema(
 
 taskSchema.index({ assignedTo: 1, status: 1 });
 taskSchema.index({ dependsOn: 1 });
+taskSchema.index({ department: 1, status: 1 });
+taskSchema.index({ dueDate: 1, status: 1 });
+taskSchema.index({ "pendingCompletionProposal.isPending": 1 });
+taskSchema.index({ "externalRefs.source": 1, "externalRefs.externalId": 1 });
 
 module.exports = mongoose.model("Task", taskSchema);
 module.exports.TASK_STATUS = TASK_STATUS;

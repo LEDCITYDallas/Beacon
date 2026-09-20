@@ -1,6 +1,14 @@
 export type TaskStatus = "BLOCKED" | "READY" | "IN_PROGRESS" | "PAUSED" | "COMPLETED";
 export type Priority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
+export interface CompletionEvidence {
+  source: string;
+  externalId: string;
+  summary: string;
+  evidenceUrl: string;
+  occurredAt: string | null;
+}
+
 export interface Task {
   _id: string;
   title: string;
@@ -14,8 +22,14 @@ export interface Task {
   status: TaskStatus;
   dependsOn: { _id: string; title: string; status: TaskStatus }[];
   blockedReason?: { type: "WAITING_ON_OTHER" | "NOT_CONFIDENT"; note: string };
-  pendingCompletionProposal?: { isPending: boolean; detectedSignal: string };
+  pendingCompletionProposal?: {
+    isPending: boolean;
+    detectedSignal: string;
+    confidence?: number;
+    evidence?: CompletionEvidence;
+  };
   overrunAlertFired: boolean;
   flagged?: boolean;
   flagNote?: string;
+  reopenCount?: number;
 }

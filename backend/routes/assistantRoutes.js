@@ -9,8 +9,11 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 router.use(wrap(requireAuth));
 // Section 5 - AI Co-Working Assistant. Consent-gated via the global
 // requireAuth middleware chain (assistant routes are mounted under /api).
+router.get("/provider", wrap(assistantController.providerInfo));
+router.get("/next-up", wrap(assistantController.nextUp));
 router.post("/ask", wrap(assistantController.ask));
 router.post("/draft", wrap(assistantController.draft));
+router.post("/summary", wrap(assistantController.summary));
 
 // Approval-gated outbound messages (docs/approval-gates.md rows 3-5)
 router.post("/messages", wrap(assistantController.proposeSend));

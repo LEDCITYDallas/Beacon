@@ -15,16 +15,96 @@ interface Proposal {
   status: "PENDING" | "SENT" | "DECLINED";
   relatedTask: string | null;
   recipient: string | null;
+  recipientName?: string;
+  requiresApproval?: boolean;
+  delivery?: { status: string; driver: string; error: string };
   createdAt: string;
 }
 
-function providerTag(provider: string) {
-  return provider === "mock" ? (
-    <span style={{ color: "var(--warning)", fontSize: 12 }}>
-      mock provider — live AI starts once the approved provider key is added
+function providerTag(provider: string, fallback?: boolean) {
+  if (provider === "mock" || provider === "template") {
+    return (
+      <span style={{ color: "var(--warning)", fontSize: 12 }}>
+        {fallback
+          ? "mock fallback — the live provider could not be reached, so nothing was invented"
+          : "mock provider — live AI starts once the approved provider key is added"}
+      </span>
+    );
+  }
+  return (
+    <span style={{ color: "var(--success)", fontSize: 12 }}>
+      {provider}
+      {fallback ? " (fallback)" : ""}
     </span>
-  ) : (
-    <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{provider}</span>
+  );
+}
+
+// Personalised next-up queue (Section 5 feature 1): deterministic ranking from
+// the employee's own task + dependency data, with the reason for each position
+// shown so it is never a black box.
+function NextUpPanel() {
+  const [queue, setQueue] = useState<{
+    nextUp: { taskId: string; title: string; score: number; reasons: string[]; dueDateLocal: string }[];
+    blocked: { title: string; reason: string; waitingOn: string[] }[];
+    awaitingConfirmation: { title: string; signal: string }[];
+    note: string;
+    timezone: string;
+  } | null>(null);
+
+  useEffect(() => {
+    client
+      .get("/assistant/next-up")
+      .then((res) => setQueue(res.data))
+      .catch(() => {});
+  }, []);
+
+  if (!queue) return null;
+
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>What to do next</h3>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+        From your own tasks and dependencies, in your timezone ({queue.timezone}).
+      </p>
+      {queue.nextUp.length === 0 && (
+        <p style={{ color: "var(--text-muted)", margin: 0 }}>Nothing ready right now.</p>
+      )}
+      {queue.nextUp.map((t, i) => (
+        <div key={t.taskId} style={{ marginBottom: 10 }}>
+          <strong>
+            {i + 1}. {t.title}
+          </strong>
+          <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+            Due {t.dueDateLocal} · {t.reasons.join(", ")}
+          </p>
+        </div>
+      ))}
+
+      {queue.blocked.length > 0 && (
+        <>
+          <h4 style={{ marginBottom: 4 }}>Waiting, not your problem yet</h4>
+          {queue.blocked.map((b) => (
+            <p key={b.title} style={{ margin: "2px 0", fontSize: 12, color: "var(--text-muted)" }}>
+              {b.title} — {b.reason === "NOT_CONFIDENT" ? "needs guidance" : "waiting on other"}
+              {b.waitingOn.length ? ` (${b.waitingOn.join(", ")})` : ""}
+            </p>
+          ))}
+        </>
+      )}
+
+      {queue.awaitingConfirmation.length > 0 && (
+        <>
+          <h4 style={{ marginBottom: 4 }}>Waiting for your confirmation</h4>
+          {queue.awaitingConfirmation.map((a) => (
+            <p key={a.title} style={{ margin: "2px 0", fontSize: 12, color: "var(--accent-light)" }}>
+              {a.title} — suggested by {a.signal}
+            </p>
+          ))}
+        </>
+      )}
+
+      <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 0 }}>{queue.note}</p>
+    </div>
   );
 }
 
@@ -43,8 +123,8 @@ function AskPanel() {
     try {
       const res = await client.post("/assistant/ask", { question });
       setAnswer(res.data);
-    } catch {
-      setError("The assistant could not answer right now. Try again.");
+    } catch (err: any) {
+      setError(err.response?.data?.message || "The assistant could not answer right now. Try again.");
     } finally {
       setBusy(false);
     }
@@ -86,6 +166,7 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
   const [request, setRequest] = useState("");
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState("");
+  const [fallback, setFallback] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -99,8 +180,11 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
       const res = await client.post("/assistant/draft", { kind, request });
       setDraft(res.data.draft);
       setProvider(res.data.provider);
-    } catch {
-      setError("Draft generation failed. Try again.");
+      setFallback(Boolean(res.data.fallback));
+    } catch (err: any) {
+      setError(
+        err.response?.data?.message || "Draft generation failed. Try again in a moment."
+      );
     } finally {
       setBusy(false);
     }
@@ -165,7 +249,7 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
             <button className="btn btn-outline" onClick={() => setDraft("")}>
               Discard draft
             </button>
-            {provider && providerTag(provider)}
+            {provider && providerTag(provider, fallback)}
           </div>
         </>
       )}
@@ -251,12 +335,20 @@ function ApprovalsPanel() {
               </strong>{" "}
               — {p.body.slice(0, 70)}
               {p.body.length > 70 ? "..." : ""}
+              {p.delivery?.status ? (
+                <span style={{ fontSize: 11 }}>
+                  {" "}
+                  · delivery: {p.delivery.status}
+                  {p.delivery.driver ? ` (${p.delivery.driver})` : ""}
+                  {p.delivery.error ? ` — ${p.delivery.error}` : ""}
+                </span>
+              ) : null}
             </p>
           ))}
           <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Note: approved messages are recorded now; actual WhatsApp/email
-            delivery activates when the notification adapter is wired in a
-            later phase.
+            Note: SIMULATED means the delivery driver is still the mock one, so the approval is
+            recorded but nothing left the machine. Real WhatsApp/email transmission starts when the
+            delivery credentials are configured.
           </p>
         </>
       )}
@@ -271,6 +363,7 @@ export default function Assistant() {
       <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
         Your co-worker for tasks and handoffs. It proposes — you confirm.
       </p>
+      <NextUpPanel />
       <AskPanel />
       <DraftPanel onQueued={() => window.location.reload()} />
       <ApprovalsPanel />

@@ -452,7 +452,8 @@ async function main() {
       channel: "WHATSAPP",
       kind: "HANDOFF",
       body: "Mock: proposal is signed, install crew task is ready for you.",
-      recipientId: mariaId,
+      recipientId: sana.user.id, // same department (Overseas Ops) - cross-dept
+      // addressing is correctly rejected elsewhere in this file.
     },
   });
   check("handoff proposal created as PENDING", propose.status === 201 && propose.data.status === "PENDING");
@@ -670,7 +671,7 @@ async function main() {
   check(
     "heartbeat returns ACTIVE + threshold in 15-20 window",
     hb.status === 200 && hb.data.status === "ACTIVE" &&
-      hb.data.thresholdMinutes >= 15 && hb.data.thresholdMinutes <= 20,
+      hb.data.idleThresholdMinutes >= 15 && hb.data.idleThresholdMinutes <= 20,
     JSON.stringify(hb.data)
   );
 

@@ -1,14 +1,19 @@
 # LED City — Agentic Workforce Assistant
 
-**Status: Phase 1 + 2 scaffold, verified & hardened** (Foundation + Task & Dependency Engine).
+**Status: Phases 1–5 implemented, verified & hardened** (Foundation, Task &
+Dependency Engine, AI Assistant, Activity Monitoring & Live Screen-View,
+Scorecard/Alerts/Digest/Retention, plus the external completion-signal
+pipeline with mock Zoho/WorkDrive/CMS adapters).
 Built against mock data only, per Section 10.2 of the client requirements —
 no real LED City employee/customer/business data anywhere in this repo.
 
-Verification: `npm test` in `/backend` runs a 43-check end-to-end smoke test
+Verification: `npm test` in `/backend` runs a 69-check end-to-end smoke test
 (`scripts/smoke-test.js`) against the running dev server — auth, the Section 9
 consent gate, role/department/task-level scoping, priority ordering, timer +
-overrun, blocked-why, dependency auto-unblock, and the human-in-the-loop
-completion flow. All 43 pass; the frontend TypeScript build is clean.
+overrun, blocked-why, dependency auto-unblock, human-in-the-loop completion,
+the integration signal scanner, assistant approval gates, auto-handoff
+proposals, alerts/flags, presence/heartbeat, live-view gating, scorecard and
+digest. All 69 pass; the frontend TypeScript build is clean.
 
 This is a local dev scaffold. Per Section 10.1, once this is reviewed it
 should be pushed as the first commit into a **private repo under the LED

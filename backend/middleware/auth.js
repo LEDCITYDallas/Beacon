@@ -58,4 +58,15 @@ function scopeToDepartment(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireRole, scopeToDepartment };
+// The live-view SSE stream is consumed by a browser fetch stream, which can send
+// the Authorization header. This variant ALSO accepts ?token= so curl / a native
+// monitoring client can subscribe during testing. It is used for that one route
+// only, so tokens stay out of URLs everywhere else.
+async function requireAuthStream(req, res, next) {
+  if (!req.headers.authorization && req.query && req.query.token) {
+    req.headers.authorization = `Bearer ${String(req.query.token)}`;
+  }
+  return requireAuth(req, res, next);
+}
+
+module.exports = { requireAuth, requireAuthStream, requireRole, scopeToDepartment };
