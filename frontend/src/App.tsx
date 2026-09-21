@@ -46,6 +46,31 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Section 2: dark theme by default, light-mode toggle available. The light
+// palette lives in theme.css ([data-theme="light"]); this only flips the
+// attribute and remembers the choice. Dark stays the default when unset.
+if (typeof window !== "undefined") {
+  try {
+    if (localStorage.getItem("theme") === "light") {
+      document.documentElement.dataset.theme = "light";
+    }
+  } catch {
+    /* storage unavailable - dark default */
+  }
+}
+
+function toggleTheme() {
+  const root = document.documentElement;
+  const toLight = root.dataset.theme !== "light";
+  if (toLight) root.dataset.theme = "light";
+  else delete root.dataset.theme;
+  try {
+    localStorage.setItem("theme", toLight ? "light" : "dark");
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const isManagerOrAbove = user?.role === "MANAGER" || user?.role === "SUPER_ADMIN";
@@ -115,9 +140,19 @@ function Shell({ children }: { children: React.ReactNode }) {
           {offline && (
             <p style={{ fontSize: 11, color: "var(--warning)" }}>Reconnecting…</p>
           )}
-          <button className="btn btn-outline" style={{ marginTop: 10 }} onClick={logout}>
-            Sign out
-          </button>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button
+              className="btn btn-outline"
+              style={{ flex: 1 }}
+              onClick={toggleTheme}
+              title="Switch between dark and light theme"
+            >
+              Theme
+            </button>
+            <button className="btn btn-outline" style={{ flex: 1 }} onClick={logout}>
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
       <main className="main">
