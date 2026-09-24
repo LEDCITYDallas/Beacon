@@ -23,26 +23,17 @@ export default function Consent() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 20,
-      }}
-    >
-      <div className="card" style={{ maxWidth: 560 }}>
-        <h2 style={{ marginTop: 0 }}>Before you get started</h2>
+    <div className="auth-shell">
+      <div className="card auth-card auth-card-wide">
+        <h2 className="page-title">Before you get started</h2>
 
-        <p style={{ color: "var(--text-muted)", fontSize: 14, lineHeight: 1.6 }}>
+        <p className="legal mt-4">
           This app is your assistant for what to do next — it tracks your
           tasks, tells you when a dependency is ready for you, and can draft
           routine replies for you to review and send.
         </p>
 
-        <p style={{ color: "var(--text-muted)", fontSize: 14, lineHeight: 1.6 }}>
+        <p className="legal mt-3">
           As part of using this system, please also note: your activity
           (such as idle/active status) may be tracked while you use it, and
           administrators may perform screen checks, including random spot
@@ -50,34 +41,27 @@ export default function Consent() {
           are in the company's monitoring policy.
         </p>
 
-        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
+        <label className="choice choice-top">
           <input
             type="checkbox"
-            style={{ width: "auto", marginTop: 3 }}
             checked={checked}
             onChange={(e) => setChecked(e.target.checked)}
           />
-          <span style={{ fontSize: 14 }}>
-            I have read and understood the above, and I accept.
-          </span>
+          <span>I have read and understood the above, and I accept.</span>
         </label>
 
         <button
-          className="btn"
-          style={{ marginTop: 20 }}
+          className="btn btn-block mt-4"
           disabled={!checked || busy}
           onClick={handleAccept}
         >
           {busy ? "Saving..." : "Accept & continue"}
         </button>
 
-        {error && (
-          <p style={{ color: "var(--danger)", fontSize: 13, marginTop: 10 }}>{error}</p>
-        )}
+        {error && <p className="notice notice-danger">{error}</p>}
 
         <button
-          className="btn btn-outline"
-          style={{ marginTop: 10 }}
+          className="btn btn-outline btn-block mt-2"
           onClick={() => {
             logout();
             navigate("/login");

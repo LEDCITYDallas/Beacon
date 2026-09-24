@@ -43,40 +43,45 @@ function YourWeekCard() {
 
   const c = week.current;
   return (
-    <div className="card" style={{ marginTop: 24 }}>
-      <h3 style={{ margin: "0 0 8px" }}>Your week</h3>
-      <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
-            {c.tasksCompleted}
-          </div>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>tasks completed</p>
+    <div className="card mt-5">
+      <h3 className="card-title">Your week</h3>
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-value">{c.tasksCompleted}</div>
+          <p className="stat-label">tasks completed</p>
         </div>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
-            {c.onTimePct === null ? "—" : `${c.onTimePct}%`}
-          </div>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>on time</p>
+        <div className="stat-card">
+          <div className="stat-value">{c.onTimePct === null ? "—" : `${c.onTimePct}%`}</div>
+          <p className="stat-label">on time</p>
         </div>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
+        <div className="stat-card">
+          <div className="stat-value">
             {c.estimateAccuracyPct === null ? "—" : `${c.estimateAccuracyPct}%`}
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>estimate accuracy</p>
+          <p className="stat-label">estimate accuracy</p>
         </div>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--accent-light)" }}>
-            {c.hoursLogged}h
+        <div className="stat-card">
+          <div className="stat-value">
+            {c.hoursLogged}
+            <span className="stat-unit">h</span>
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>logged</p>
-        </div>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--text-muted)" }}>
-            {week.trend.map((t) => t.tasksCompleted).join(" · ")}
-          </div>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>previous 3 weeks</p>
+          <p className="stat-label">logged this week</p>
         </div>
       </div>
+
+      {week.trend.length > 0 && (
+        <>
+          <h4 className="card-title-quiet mt-5">Previous weeks</h4>
+          <div className="strip">
+            {week.trend.map((t, i) => (
+              <div key={`week-${i}`} className="strip-cell">
+                <div className="strip-cell-value">{t.tasksCompleted}</div>
+                <div className="strip-cell-label">{t.hoursLogged}h logged</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -114,42 +119,34 @@ export default function EmployeeHome() {
     }
   }
 
-  if (!data) return <p style={{ color: "var(--text-muted)" }}>Loading your queue...</p>;
+  if (!data) return <p className="muted">Loading your queue...</p>;
 
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>
-        What's next{" "}
-        {presence && (
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              padding: "3px 10px",
-              borderRadius: 999,
-              marginLeft: 8,
-              background:
-                presence.status === "ACTIVE"
-                  ? "rgba(34,197,94,0.15)"
-                  : "rgba(245,158,11,0.15)",
-              color: presence.status === "ACTIVE" ? "var(--success)" : "var(--warning)",
-              verticalAlign: "middle",
-            }}
-          >
-            {presence.status === "ACTIVE"
-              ? presence.activityConfidence === "CONFIRMED"
-                ? "Active"
-                : "Active (activity unknown)"
-              : "On break / inactive"}
-          </span>
-        )}
-      </h2>
-      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+      <div className="page-head">
+        <h2 className="page-title">
+          What's next
+          {presence && (
+            <span
+              className={`pill ${
+                presence.status === "ACTIVE" ? "pill-success" : "pill-warning"
+              }`}
+            >
+              {presence.status === "ACTIVE"
+                ? presence.activityConfidence === "CONFIRMED"
+                  ? "Active"
+                  : "Active (activity unknown)"
+                : "On break / inactive"}
+            </span>
+          )}
+        </h2>
+      </div>
+      <p className="page-sub">
         {data.blockedCount > 0
           ? `${data.blockedCount} task(s) waiting on something else — you don't need to think about those right now.`
           : "Nothing blocked right now."}
         {presence?.lastActivityAt && (
-          <span style={{ display: "block", fontSize: 12, marginTop: 4 }}>
+          <span className="text-xs muted d-block mt-1">
             Last activity signal: {relativeFrom(presence.lastActivityAt)}
           </span>
         )}
@@ -161,25 +158,25 @@ export default function EmployeeHome() {
 
       {data.current ? (
         <div className="card card-current-task">
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <h3 style={{ margin: 0 }}>{data.current.title}</h3>
+          <div className="card-head">
+            <h3 className="card-title mb-0">{data.current.title}</h3>
             <StatusBadge status={data.current.status} />
           </div>
-          <p style={{ color: "var(--text-muted)" }}>{data.current.description}</p>
-          <p style={{ fontSize: 13 }}>
+          <p className="muted mt-0 mb-2">{data.current.description}</p>
+          <p className="text-sm mt-0 mb-2">
             <strong>Definition of done:</strong> {data.current.definitionOfDone}
           </p>
-          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          <p className="text-sm muted mt-0 mb-0">
             Due {formatDate(data.current.dueDate, user?.timezone)} · {data.current.estimatedHours}h
             estimated
           </p>
           {data.current.overrunAlertFired && (
-            <p style={{ color: "var(--warning)", fontSize: 13 }}>
+            <p className="notice notice-warning">
               ⚠ This task has run past its estimated time. Worth a quick check on the estimate.
             </p>
           )}
 
-          <div style={{ marginTop: 16 }}>
+          <div className="mt-4">
             <TaskTimer
               task={data.current}
               baseSeconds={data.currentActualSeconds ?? 0}
@@ -187,13 +184,13 @@ export default function EmployeeHome() {
             />
           </div>
 
-          <div style={{ marginTop: 14 }}>
+          <div className="mt-3">
             <BlockedWhyForm task={data.current} onChange={handleCurrentTaskChange} />
           </div>
         </div>
       ) : (
         <div className="card">
-          <p style={{ color: "var(--text-muted)", margin: 0 }}>
+          <p className="muted m-0">
             No task in progress. Pick one from "Up next" below to start it.
           </p>
         </div>
@@ -201,20 +198,29 @@ export default function EmployeeHome() {
 
       {data.nextUp.length > 0 && (
         <>
-          <h3 style={{ marginTop: 28 }}>Up next</h3>
+          <h3 className="section-title">Up next</h3>
           {data.nextUp.map((t) => (
-            <div
-              key={t._id}
-              className="card"
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
-            >
+            <div key={t._id} className="card list-row">
               <div>
                 <strong>{t.title}</strong>
-                <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
+                <p className="list-meta">
                   Due {formatDate(t.dueDate, user?.timezone)} · {t.estimatedHours}h est.
                 </p>
               </div>
-              <StatusBadge status={t.status} />
+              <div className="row">
+                <StatusBadge status={t.status} />
+                {t.status === "READY" && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={async () => {
+                      await client.post(`/tasks/${t._id}/start`);
+                      load();
+                    }}
+                  >
+                    Start
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </>

@@ -221,64 +221,60 @@ export default function AdminSettings() {
     }
   }
 
-  if (error && !status) return <p style={{ color: "var(--danger)" }}>{error}</p>;
-  if (!status) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
+  if (error && !status) return <p className="notice notice-danger">{error}</p>;
+  if (!status) return <p className="muted">Loading…</p>;
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>Administration</h2>
-      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+      <h2 className="page-title">Administration</h2>
+      <p className="page-sub">
         {status.environment.productionTarget} · env {status.environment.nodeEnv}
         {status.environment.mockMode ? " · mock mode" : " · live mode"}
       </p>
 
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-      {notice && <p style={{ color: "var(--success)" }}>{notice}</p>}
+      {error && <p className="notice notice-danger">{error}</p>}
+      {notice && <p className="notice notice-success">{notice}</p>}
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>AI assistant & cost</h3>
-        <p style={{ margin: 0, fontSize: 13 }}>
+        <h3 className="card-title">AI assistant &amp; cost</h3>
+        <p className="text-sm m-0">
           Provider <strong>{status.ai.provider}</strong> ({status.ai.model}) ·{" "}
           {status.ai.live ? (
-            <span style={{ color: "var(--success)" }}>live key configured</span>
+            <span className="text-success">live key configured</span>
           ) : (
-            <span style={{ color: "var(--warning)" }}>
+            <span className="text-warning">
               not live — {status.ai.fallbackToMock ? "falling back to the labelled mock provider" : "calls will fail"}
             </span>
           )}
         </p>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <p className="card-intro text-xs mt-2">
           Cost assumptions: ${status.ai.costPerMillion.input}/1M input, ${status.ai.costPerMillion.output}
           /1M output · budget ${status.ai.monthlyBudgetUsd}/month · daily cap{" "}
           {status.ai.dailyCallLimitPerUser} calls per user
         </p>
         {usage && (
           <>
-            <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginTop: 8 }}>
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{usage.month.calls}</div>
-                <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>calls this month</p>
+            <div className="stat-row mt-2">
+              <div className="stat-card">
+                <div className="stat-value-sm stat-value-quiet">{usage.month.calls}</div>
+                <p className="stat-label">calls this month</p>
               </div>
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>
+              <div className="stat-card">
+                <div className="stat-value-sm stat-value-quiet">
                   ${usage.month.estCostUsd.toFixed(2)}
-                  {usage.month.overBudget && <span style={{ color: "var(--danger)" }}> over</span>}
+                  {usage.month.overBudget && <span className="text-danger"> over</span>}
                 </div>
-                <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
-                  estimated this month
-                </p>
+                <p className="stat-label">estimated this month</p>
               </div>
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{usage.totals.fallbacks}</div>
-                <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
-                  mock fallbacks (provider issues)
-                </p>
+              <div className="stat-card">
+                <div className="stat-value-sm stat-value-quiet">{usage.totals.fallbacks}</div>
+                <p className="stat-label">mock fallbacks (provider issues)</p>
               </div>
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{usage.totals.failures}</div>
-                <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>failed calls</p>
+              <div className="stat-card">
+                <div className="stat-value-sm stat-value-quiet">{usage.totals.failures}</div>
+                <p className="stat-label">failed calls</p>
               </div>
             </div>
-            <table style={{ marginTop: 12 }}>
+            <table className="mt-3">
               <thead>
                 <tr>
                   <th>User</th>
@@ -302,15 +298,15 @@ export default function AdminSettings() {
         )}
       </div>
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Scorecard weights (joint decision with Omair)</h3>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <h3 className="card-title">Scorecard weights (joint decision with Omair)</h3>
+        <p className="card-intro">
           activityIdlePct is hard-capped at 10 and can never be the dominant factor. Reports stay in
           draft mode while isLive is false.
         </p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="field-row">
           {Object.keys(weights).map((k) => (
-            <div key={k} style={{ minWidth: 150 }}>
-              <label style={{ marginTop: 0 }}>{k}</label>
+            <div key={k} className="field">
+              <label className="m-0">{k}</label>
               <input
                 type="number"
                 min={0}
@@ -321,55 +317,52 @@ export default function AdminSettings() {
             </div>
           ))}
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <label className="choice">
           <input
             type="checkbox"
-            style={{ width: "auto" }}
             checked={isLive}
             onChange={(e) => setIsLive(e.target.checked)}
           />
-          <span style={{ fontSize: 13 }}>
-            Activate the formula (isLive) — only tick this after the weights are agreed with Omair
-          </span>
+          <span>Activate the formula (isLive) — only tick this after the weights are agreed with Omair</span>
         </label>
-        <button className="btn" style={{ marginTop: 12 }} onClick={() => void saveWeights()}>
-          Save weights
-        </button>
+        <div className="form-actions">
+          <button className="btn" onClick={() => void saveWeights()}>
+            Save weights
+          </button>
+        </div>
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Live-view role scope</h3>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <h3 className="card-title">Live-view role scope</h3>
+        <p className="card-intro">
           Pending the client decision (Section 12). Screenshots stay off for every role — v1 is live
           view only, and no frame is ever stored.
         </p>
         {ROLE_OPTIONS.map((r) => (
-          <label key={r} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <label key={r} className="choice">
             <input
               type="checkbox"
-              style={{ width: "auto" }}
               checked={liveRoles.includes(r)}
               onChange={(e) =>
                 setLiveRoles(e.target.checked ? [...liveRoles, r] : liveRoles.filter((x) => x !== r))
               }
             />
-            <span style={{ fontSize: 13 }}>{r} may request live view</span>
+            <span>{r} may request live view</span>
           </label>
         ))}
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <label className="choice mt-2">
           <input
             type="checkbox"
-            style={{ width: "auto" }}
             checked={excludeReduced}
             onChange={(e) => setExcludeReduced(e.target.checked)}
           />
-          <span style={{ fontSize: 13 }}>
-            Exclude reduced-monitoring roles (activity/idle tracking only, never screens)
-          </span>
+          <span>Exclude reduced-monitoring roles (activity/idle tracking only, never screens)</span>
         </label>
-        <button className="btn" style={{ marginTop: 12 }} onClick={() => void saveLiveViewScope()}>
-          Save live-view scope
-        </button>
+        <div className="form-actions">
+          <button className="btn" onClick={() => void saveLiveViewScope()}>
+            Save live-view scope
+          </button>
+        </div>
       </div>
 
       <div className="card">

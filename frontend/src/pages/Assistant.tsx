@@ -24,17 +24,20 @@ interface Proposal {
 function providerTag(provider: string, fallback?: boolean) {
   if (provider === "mock" || provider === "template") {
     return (
-      <span style={{ color: "var(--warning)", fontSize: 12 }}>
-        {fallback
-          ? "mock fallback — the live provider could not be reached, so nothing was invented"
-          : "mock provider — live AI starts once the approved provider key is added"}
+      <span className="row row-wrap text-xs">
+        <span className="pill pill-warning pill-code">{fallback ? "mock fallback" : "mock"}</span>
+        <span className="muted">
+          {fallback
+            ? "the live provider could not be reached, so nothing was invented"
+            : "live AI starts once the approved provider key is added"}
+        </span>
       </span>
     );
   }
   return (
-    <span style={{ color: "var(--success)", fontSize: 12 }}>
-      {provider}
-      {fallback ? " (fallback)" : ""}
+    <span className="row row-wrap text-xs">
+      <span className="pill pill-success pill-code">{provider}</span>
+      {fallback && <span className="muted"> (fallback)</span>}
     </span>
   );
 }
@@ -62,29 +65,29 @@ function NextUpPanel() {
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>What to do next</h3>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+      <h3 className="card-title">What to do next</h3>
+      <p className="card-intro">
         From your own tasks and dependencies, in your timezone ({queue.timezone}).
       </p>
-      {queue.nextUp.length === 0 && (
-        <p style={{ color: "var(--text-muted)", margin: 0 }}>Nothing ready right now.</p>
-      )}
+      {queue.nextUp.length === 0 && <p className="muted m-0">Nothing ready right now.</p>}
       {queue.nextUp.map((t, i) => (
-        <div key={t.taskId} style={{ marginBottom: 10 }}>
-          <strong>
-            {i + 1}. {t.title}
-          </strong>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
-            Due {t.dueDateLocal} · {t.reasons.join(", ")}
-          </p>
+        <div key={t.taskId} className="list-row card-inset card">
+          <div>
+            <strong>
+              {i + 1}. {t.title}
+            </strong>
+            <p className="list-meta mb-0">
+              Due {t.dueDateLocal} · {t.reasons.join(", ")}
+            </p>
+          </div>
         </div>
       ))}
 
       {queue.blocked.length > 0 && (
         <>
-          <h4 style={{ marginBottom: 4 }}>Waiting, not your problem yet</h4>
+          <h4 className="card-title-quiet mt-3">Waiting, not your problem yet</h4>
           {queue.blocked.map((b) => (
-            <p key={b.title} style={{ margin: "2px 0", fontSize: 12, color: "var(--text-muted)" }}>
+            <p key={b.title} className="list-meta mb-0">
               {b.title} — {b.reason === "NOT_CONFIDENT" ? "needs guidance" : "waiting on other"}
               {b.waitingOn.length ? ` (${b.waitingOn.join(", ")})` : ""}
             </p>
@@ -94,16 +97,16 @@ function NextUpPanel() {
 
       {queue.awaitingConfirmation.length > 0 && (
         <>
-          <h4 style={{ marginBottom: 4 }}>Waiting for your confirmation</h4>
+          <h4 className="card-title-quiet mt-3">Waiting for your confirmation</h4>
           {queue.awaitingConfirmation.map((a) => (
-            <p key={a.title} style={{ margin: "2px 0", fontSize: 12, color: "var(--accent-light)" }}>
+            <p key={a.title} className="list-meta mb-0 text-xs text-accent">
               {a.title} — suggested by {a.signal}
             </p>
           ))}
         </>
       )}
 
-      <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 0 }}>{queue.note}</p>
+      <p className="text-micro muted mt-2 mb-0">{queue.note}</p>
     </div>
   );
 }
@@ -132,26 +135,28 @@ function AskPanel() {
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>Ask your assistant</h3>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+      <h3 className="card-title">Ask your assistant</h3>
+      <p className="card-intro">
         Answers come from your own task data — it can't see anything you can't.
       </p>
-      <textarea
-        rows={2}
-        placeholder="e.g. What should I work on next? What's blocked on me?"
-        value={question}
-        onChange={(e) => setQuestion(e.target.value)}
-      />
-      <div style={{ marginTop: 10 }}>
-        <button className="btn" onClick={ask} disabled={busy || !question.trim()}>
-          {busy ? "Thinking..." : "Ask"}
-        </button>
+      <div className="ask-form">
+        <textarea
+          rows={2}
+          placeholder="e.g. What should I work on next? What's blocked on me?"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+        />
+        <div className="form-actions">
+          <button className="btn" onClick={ask} disabled={busy || !question.trim()}>
+            {busy ? "Thinking..." : "Ask"}
+          </button>
+        </div>
       </div>
-      {error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>}
+      {error && <p className="notice notice-danger">{error}</p>}
       {answer && (
-        <div className="card" style={{ background: "var(--surface-2)", marginTop: 12 }}>
-          <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{answer.text}</p>
-          <div style={{ marginTop: 8 }}>{providerTag(answer.provider)}</div>
+        <div className="answer-block">
+          <p className="answer-text">{answer.text}</p>
+          <div className="mt-2">{providerTag(answer.provider)}</div>
         </div>
       )}
     </div>
@@ -213,7 +218,7 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>Draft work product</h3>
+      <h3 className="card-title">Draft work product</h3>
       <label>Draft type</label>
       <select value={kind} onChange={(e) => setKind(e.target.value)}>
         <option value="REPLY">Reply</option>
@@ -228,7 +233,7 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
         value={request}
         onChange={(e) => setRequest(e.target.value)}
       />
-      <div style={{ marginTop: 10 }}>
+      <div className="form-actions">
         <button className="btn" onClick={generate} disabled={busy || !request.trim()}>
           {busy ? "Drafting..." : "Generate draft"}
         </button>
@@ -242,7 +247,7 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
-          <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+          <div className="form-actions">
             <button className="btn" onClick={queueForSend} disabled={busy}>
               Queue for send
             </button>
@@ -254,8 +259,8 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
         </>
       )}
 
-      {note && <p style={{ color: "var(--success)", fontSize: 13 }}>{note}</p>}
-      {error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>}
+      {note && <p className="notice notice-success">{note}</p>}
+      {error && <p className="notice notice-danger">{error}</p>}
     </div>
   );
 }
@@ -286,32 +291,28 @@ function ApprovalsPanel() {
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>Approvals queue</h3>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+      <p className="card-intro">
         Nothing is sent until approved here. Handoff proposals are created
         automatically when a dependency unblocks.
       </p>
 
-      {!loaded && <p style={{ color: "var(--text-muted)" }}>Loading...</p>}
+      {!loaded && <p className="muted m-0">Loading...</p>}
 
       {loaded && pending.length === 0 && (
-        <p style={{ color: "var(--text-muted)", margin: 0 }}>
+        <p className="muted m-0">
           Nothing waiting for approval.
         </p>
       )}
 
       {pending.map((p) => (
-        <div
-          key={p._id}
-          className="card"
-          style={{ background: "var(--surface-2)", border: "1px solid var(--accent)" }}
-        >
-          <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
+        <div key={p._id} className="card card-inset card-accent">
+          <p className="list-meta mt-0 text-xs">
             {p.kind === "HANDOFF" ? "Handoff notification" : "Draft message"} ·{" "}
             {p.channel === "WHATSAPP" ? "WhatsApp" : "Email"} ·{" "}
             {new Date(p.createdAt).toLocaleString()}
           </p>
-          <p style={{ whiteSpace: "pre-wrap", margin: "8px 0 12px" }}>{p.body}</p>
-          <div style={{ display: "flex", gap: 8 }}>
+          <p className="answer-text mb-4 mt-2">{p.body}</p>
+          <div className="form-actions mt-0">
             <button className="btn" onClick={() => decide(p._id, "confirm")}>
               Approve send
             </button>
@@ -327,16 +328,18 @@ function ApprovalsPanel() {
 
       {decided.length > 0 && (
         <>
-          <h4 style={{ marginBottom: 4 }}>Recent decisions</h4>
+          <h4 className="card-title-quiet mt-4">Recent decisions</h4>
           {decided.map((p) => (
-            <p key={p._id} style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0" }}>
-              <strong style={{ color: p.status === "SENT" ? "var(--success)" : "var(--danger)" }}>
+            <p key={p._id} className="list-meta text-sm">
+              <strong
+                className={p.status === "SENT" ? "text-success" : "text-danger"}
+              >
                 {p.status === "SENT" ? "Approved" : "Declined"}
               </strong>{" "}
               — {p.body.slice(0, 70)}
               {p.body.length > 70 ? "..." : ""}
               {p.delivery?.status ? (
-                <span style={{ fontSize: 11 }}>
+                <span className="text-micro">
                   {" "}
                   · delivery: {p.delivery.status}
                   {p.delivery.driver ? ` (${p.delivery.driver})` : ""}
@@ -345,7 +348,7 @@ function ApprovalsPanel() {
               ) : null}
             </p>
           ))}
-          <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <p className="text-xs muted">
             Note: SIMULATED means the delivery driver is still the mock one, so the approval is
             recorded but nothing left the machine. Real WhatsApp/email transmission starts when the
             delivery credentials are configured.
@@ -359,8 +362,10 @@ function ApprovalsPanel() {
 export default function Assistant() {
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>Assistant</h2>
-      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+      <div className="page-head">
+        <h2 className="page-title">Assistant</h2>
+      </div>
+      <p className="page-sub">
         Your co-worker for tasks and handoffs. It proposes — you confirm.
       </p>
       <NextUpPanel />

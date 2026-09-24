@@ -25,20 +25,10 @@ export default function Login() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-      }}
-    >
-      <form onSubmit={handleSubmit} className="card" style={{ width: 340 }}>
-        <h2 style={{ marginTop: 0, color: "var(--accent-light)" }}>LED City Workforce</h2>
-        <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: -8 }}>
-          Sign in to see what's next.
-        </p>
+    <div className="auth-shell">
+      <form onSubmit={handleSubmit} className="card auth-card">
+        <h2 className="page-title ink-accent">LED City Workforce</h2>
+        <p className="list-meta mb-4">Sign in to see what's next.</p>
 
         <label>Email</label>
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
@@ -51,11 +41,9 @@ export default function Login() {
           required
         />
 
-        {error && (
-          <p style={{ color: "var(--danger)", fontSize: 13, marginTop: 12 }}>{error}</p>
-        )}
+        {error && <p className="notice notice-danger">{error}</p>}
 
-        <button className="btn" style={{ marginTop: 20, width: "100%" }} disabled={busy}>
+        <button className="btn btn-block mt-4" disabled={busy}>
           {busy ? "Signing in..." : "Sign in"}
         </button>
       </form>

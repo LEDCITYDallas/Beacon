@@ -46,13 +46,13 @@ export default function CompletionProposals({ onDecided }: { onDecided?: () => v
     }
   }
 
-  if (error) return <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>;
+  if (error) return <p className="notice notice-danger">{error}</p>;
   if (!tasks.length) return null;
 
   return (
-    <div className="card" style={{ border: "1px solid var(--accent)" }}>
-      <h3 style={{ marginTop: 0 }}>Needs your confirmation ({tasks.length})</h3>
-      <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 0 }}>
+    <div className="card card-accent">
+      <h3 className="card-title">Needs your confirmation ({tasks.length})</h3>
+      <p className="card-intro">
         Something outside this app suggested these tasks are finished. Nothing is closed until you
         confirm it.
       </p>
@@ -61,34 +61,28 @@ export default function CompletionProposals({ onDecided }: { onDecided?: () => v
         const p = t.pendingCompletionProposal!;
         const evidence = p.evidence;
         return (
-          <div
-            key={t._id}
-            className="card"
-            style={{ background: "var(--surface-2)", marginBottom: 12 }}
-          >
+          <div key={t._id} className="card card-inset">
             <strong>{t.title}</strong>
-            <p style={{ margin: "6px 0 2px", fontSize: 13 }}>
+            <p className="text-sm mt-2 mb-0">
               Detected: {p.detectedSignal}
             </p>
             {evidence && (
-              <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
+              <p className="text-xs muted mt-2 mb-0">
                 Source {evidence.source}
                 {evidence.externalId ? ` #${evidence.externalId}` : ""}
                 {evidence.occurredAt ? ` · ${formatDate(evidence.occurredAt)}` : ""}
                 {p.confidence ? ` · match confidence ${Math.round((p.confidence || 0) * 100)}%` : ""}
               </p>
             )}
-            {evidence?.summary && (
-              <p style={{ margin: "6px 0 0", fontSize: 12 }}>{evidence.summary}</p>
-            )}
+            {evidence?.summary && <p className="text-xs mt-2 mb-0">{evidence.summary}</p>}
             {evidence?.evidenceUrl && (
-              <p style={{ margin: "4px 0 0", fontSize: 12 }}>
-                <a href={evidence.evidenceUrl} target="_blank" rel="noreferrer">
+              <p className="text-xs mt-2 mb-0">
+                <a className="link" href={evidence.evidenceUrl} target="_blank" rel="noreferrer">
                   Open the evidence
                 </a>
               </p>
             )}
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <div className="form-actions">
               <button
                 className="btn"
                 disabled={busy === t._id}

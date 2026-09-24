@@ -15,28 +15,22 @@ export default function LiveViewPrompt() {
   if (!pending && !active) return null;
 
   return (
-    <div
-      className="card"
-      style={{
-        border: `1px solid ${pending ? "var(--warning)" : "var(--danger)"}`,
-        background: "var(--surface-2)",
-      }}
-    >
+    <div className="card card-inset card-warn">
       {pending && (
         <>
-          <h3 style={{ marginTop: 0, color: "var(--warning)" }}>
+          <h3 className="card-title" style={{ color: "var(--warning-ink)" }}>
             Screen view request from {pending.viewerName}
           </h3>
-          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          <p className="card-intro">
             {pending.viewerName} ({pending.viewerRole}) is asking to view your screen
             {pending.reason ? ` — reason: “${pending.reason}”` : ""}. The request expires in{" "}
             {pending.expiresInSeconds}s.
           </p>
-          <p style={{ fontSize: 13 }}>
+          <p className="text-sm">
             Live view is <strong>view-only</strong>: nothing is recorded, saved or screenshotted. You
             can stop sharing at any moment.
           </p>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div className="form-actions">
             <button className="btn" onClick={() => void approve(pending.id)}>
               Allow
             </button>
@@ -49,14 +43,14 @@ export default function LiveViewPrompt() {
 
       {active && (
         <>
-          <h3 style={{ marginTop: 0, color: sharing ? "var(--danger)" : "var(--warning)" }}>
+          <h3 className="card-title" style={{ color: sharing ? "var(--danger-ink)" : "var(--warning-ink)" }}>
             {sharing ? `Sharing your screen with ${active.viewerName}` : `Live view ready — ${active.viewerName}`}
           </h3>
-          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          <p className="card-intro">
             Started {new Date(active.startedAt).toLocaleTimeString()}. Frames sent: {framesSent}. Nothing
             is stored on your machine or the server.
           </p>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="row">
             {!sharing ? (
               <button className="btn" onClick={() => void startSharing()}>
                 Start sharing
@@ -70,7 +64,7 @@ export default function LiveViewPrompt() {
         </>
       )}
 
-      {error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>}
+      {error && <p className="notice notice-danger">{error}</p>}
     </div>
   );
 }

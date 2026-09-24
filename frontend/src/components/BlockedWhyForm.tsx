@@ -31,35 +31,33 @@ export default function BlockedWhyForm({
   }
 
   return (
-    <div className="card" style={{ background: "var(--surface-2)" }}>
+    <div className="card card-inset">
       <label>Why is this blocked?</label>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
+      <div className="stack-2">
+        <label className="choice">
           <input
             type="radio"
-            style={{ width: "auto" }}
             name="blocked-type"
             checked={type === "WAITING_ON_OTHER"}
             onChange={() => setType("WAITING_ON_OTHER")}
           />
-          <span style={{ fontSize: 14 }}>Waiting on another person or system</span>
+          <span>Waiting on another person or system</span>
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
+        <label className="choice">
           <input
             type="radio"
-            style={{ width: "auto" }}
             name="blocked-type"
             checked={type === "NOT_CONFIDENT"}
             onChange={() => setType("NOT_CONFIDENT")}
           />
-          <span style={{ fontSize: 14 }}>Not confident in the decision / need more info</span>
+          <span>Not confident in the decision / need more info</span>
         </label>
       </div>
 
       <label>Note (optional)</label>
       <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
 
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+      <div className="form-actions">
         <button className="btn" disabled={!type} onClick={submit}>
           Confirm
         </button>

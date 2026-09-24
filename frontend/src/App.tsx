@@ -11,6 +11,7 @@ import TeamScorecard from "./pages/TeamScorecard";
 import LiveView from "./pages/LiveView";
 import AdminSettings from "./pages/AdminSettings";
 import LiveViewPrompt from "./components/LiveViewPrompt";
+import Avatar from "./components/Avatar";
 import { useIdleHeartbeat } from "./hooks/useIdleHeartbeat";
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -81,6 +82,11 @@ function Shell({ children }: { children: React.ReactNode }) {
   // Break from the idle duration we send - 15-20 minutes, configurable.
   const { presence, offline } = useIdleHeartbeat({ enabled: Boolean(user) });
 
+  // Nav highlight is derived from the current route (no routing change - the
+  // same paths, just so the active item is visible).
+  const location = useLocation();
+  const navClass = (to: string) => (location.pathname === to ? "nav-link active" : "nav-link");
+
   const presenceLabel =
     presence === null
       ? ""
@@ -93,63 +99,68 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h2>LED City</h2>
-        <Link className="nav-link" to="/">
+        <p className="brand">LED City</p>
+        <p className="nav-section">Workspace</p>
+        <Link className={navClass("/")} to="/">
           Home
         </Link>
-        <Link className="nav-link" to="/assistant">
+        <Link className={navClass("/assistant")} to="/assistant">
           Assistant
         </Link>
-        <Link className="nav-link" to="/scorecard">
+        <Link className={navClass("/scorecard")} to="/scorecard">
           My scorecard
         </Link>
         {isManagerOrAbove && (
           <>
-            <Link className="nav-link" to="/team">
+            <p className="nav-section">Team</p>
+            <Link className={navClass("/team")} to="/team">
               Team queue
             </Link>
-            <Link className="nav-link" to="/team-scorecard">
+            <Link className={navClass("/team-scorecard")} to="/team-scorecard">
               Team scorecard
             </Link>
-            <Link className="nav-link" to="/liveview">
+            <Link className={navClass("/liveview")} to="/liveview">
               Live view
             </Link>
           </>
         )}
         {isSuperAdmin && (
-          <Link className="nav-link" to="/admin">
-            Administration
-          </Link>
+          <>
+            <p className="nav-section">System</p>
+            <Link className={navClass("/admin")} to="/admin">
+              Administration
+            </Link>
+          </>
         )}
-        <div style={{ marginTop: 40 }}>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 2 }}>{user?.name}</p>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 0 }}>
-            {user?.role} · {user?.department}
-          </p>
+        <div className="sidebar-foot">
+          <div className="user-chip">
+            <Avatar name={user?.name || "?"} size="sm" />
+            <div className="user-chip-body">
+              <p className="user-chip-name">{user?.name}</p>
+              <p className="user-chip-meta">
+                {user?.role} · {user?.department}
+              </p>
+            </div>
+          </div>
           {presence && (
             <p
-              style={{
-                fontSize: 11,
-                marginTop: 6,
-                color: presence.status === "ACTIVE" ? "var(--success)" : "var(--warning)",
-              }}
+              className={`status-line mt-2 ${
+                presence.status === "ACTIVE" ? "status-line-active" : "status-line-break"
+              }`}
             >
               {presenceLabel}
             </p>
           )}
-          {offline && (
-            <p style={{ fontSize: 11, color: "var(--warning)" }}>Reconnecting…</p>
-          )}
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          {offline && <p className="text-micro status-line-break mb-0">Reconnecting…</p>}
+          <div className="row mt-3">
             <button
-              className="btn btn-outline"
-              style={{ flex: 1 }}
+              className="btn btn-outline btn-sm flex-1"
               onClick={toggleTheme}
               title="Switch between dark and light theme"
             >
               Theme
             </button>
-            <button className="btn btn-outline" style={{ flex: 1 }} onClick={logout}>
+            <button className="btn btn-outline btn-sm flex-1" onClick={logout}>
               Sign out
             </button>
           </div>

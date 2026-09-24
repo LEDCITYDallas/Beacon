@@ -50,11 +50,31 @@ interface Report {
 
 function Metric({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
-    <div>
-      <div style={{ fontSize: 20, fontWeight: 600, color: muted ? "var(--text-muted)" : undefined }}>
-        {value}
-      </div>
-      <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>{label}</p>
+    <div className="stat-card">
+      <div className={`stat-value-sm ${muted ? "stat-value-muted" : "stat-value-quiet"}`}>{value}</div>
+      <p className="stat-label">{label}</p>
+    </div>
+  );
+}
+
+// One cell per trend period - the same compact equal-width row the manager
+// scorecard uses, so both scorecards read the same way (design pass).
+function TrendStrip({ rows }: { rows: TrendRow[] }) {
+  return (
+    <div className="strip">
+      {rows.map((t, i) => (
+        <div
+          key={t.label}
+          className={i === rows.length - 1 ? "strip-cell strip-cell-current" : "strip-cell"}
+        >
+          <div className={`strip-cell-value ${t.score === null ? "strip-cell-value-empty" : ""}`}>
+            {t.score === null ? "—" : t.score}
+          </div>
+          <div className="strip-cell-label">
+            {t.label} · {t.tasksCompleted}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -71,13 +91,13 @@ export default function MyScorecard() {
       .catch(() => setError("Could not load your scorecard."));
   }, []);
 
-  if (error) return <p style={{ color: "var(--danger)" }}>{error}</p>;
-  if (!report) return <p style={{ color: "var(--text-muted)" }}>Loading your scorecard…</p>;
+  if (error) return <p className="notice notice-danger">{error}</p>;
+  if (!report) return <p className="muted">Loading your scorecard…</p>;
 
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>My scorecard</h2>
-      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+      <h2 className="page-title">My scorecard</h2>
+      <p className="page-sub">
         Your own numbers, in your timezone ({user?.timezone}). Ask your manager for a walkthrough at
         any time.
       </p>
@@ -86,9 +106,10 @@ export default function MyScorecard() {
       <PeriodCard period={report.month} />
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Trend</h3>
-        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Last 4 weeks (oldest first)</p>
-        <table>
+        <h3 className="card-title">Trend</h3>
+        <p className="card-intro">Last 4 weeks (oldest first)</p>
+        <TrendStrip rows={report.trends.weeks} />
+        <table className="mt-4">
           <thead>
             <tr>
               <th>Week of</th>
@@ -111,8 +132,9 @@ export default function MyScorecard() {
           </tbody>
         </table>
 
-        <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 16 }}>Monthly view</p>
-        <table>
+        <p className="card-intro mt-5">Monthly view</p>
+        <TrendStrip rows={report.trends.months} />
+        <table className="mt-4">
           <thead>
             <tr>
               <th>Month of</th>
@@ -140,19 +162,19 @@ function PeriodCard({ period }: { period: Period }) {
   const i = period.inputs;
   return (
     <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 style={{ margin: 0, textTransform: "capitalize" }}>{period.period}</h3>
-        <div style={{ fontSize: 30, fontWeight: 700, color: "var(--accent-light)" }}>
+      <div className="row-between baseline">
+        <h3 className="m-0 capitalize">{period.period}</h3>
+        <div className="stat-value">
           {period.score.value === null ? "—" : period.score.value}
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}> / 100</span>
+          <span className="stat-unit"> / 100</span>
         </div>
       </div>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 12px" }}>
+      <p className="card-intro mt-2 mb-4">
         {formatDate(period.windowStart, period.timezone)} →{" "}
         {formatDate(period.windowEnd, period.timezone)} ({period.timezone})
       </p>
 
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+      <div className="stat-row">
         <Metric label="tasks completed" value={String(i.tasksCompleted)} />
         <Metric label="on time" value={i.onTimePct === null ? "—" : `${i.onTimePct}%`} />
         <Metric
@@ -168,10 +190,8 @@ function PeriodCard({ period }: { period: Period }) {
         <Metric label="activity observed" value={`${i.activityIdlePct}%`} muted />
       </div>
 
-      {period.banner && (
-        <p style={{ marginTop: 12, fontSize: 12, color: "var(--warning)" }}>{period.banner}</p>
-      )}
-      <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 0 }}>
+      {period.banner && <p className="notice notice-warning">{period.banner}</p>}
+      <p className="text-micro muted mb-0 mt-3">
         Activity/idle can never dominate this score (weight capped at 10), and this report never
         triggers any automatic decision.
       </p>

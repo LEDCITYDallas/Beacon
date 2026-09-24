@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { formatDate } from "../utils/format";
+import { formatDate, formatDayShort } from "../utils/format";
+import Avatar from "../components/Avatar";
 
 // ---------------------------------------------------------------------
 // Manager / Super Admin scorecard (Priority 4 / Section 7).
@@ -63,6 +64,27 @@ interface DepartmentRow {
   averageOnTimePct: number | null;
 }
 
+// Compact 4-week strip: one equal-width cell per week, score on top and the
+// week label underneath - the same strip the employee scorecard uses, so both
+// read the same way (design pass). Labels are zone-local day keys.
+function TrendStrip({ rows }: { rows: MemberRow["trend"] }) {
+  return (
+    <div className="strip strip-inline">
+      {rows.map((t, i) => (
+        <div
+          key={t.label}
+          className={i === rows.length - 1 ? "strip-cell strip-cell-current" : "strip-cell"}
+        >
+          <div className={`strip-cell-value ${t.score === null ? "strip-cell-value-empty" : ""}`}>
+            {t.score === null ? "–" : t.score}
+          </div>
+          <div className="strip-cell-label">{formatDayShort(t.label)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function TeamScorecard() {
   const { user } = useAuth();
   const [report, setReport] = useState<TeamReport | null>(null);
@@ -104,30 +126,29 @@ export default function TeamScorecard() {
     }
   }
 
-  if (error && !report) return <p style={{ color: "var(--danger)" }}>{error}</p>;
-  if (!report) return <p style={{ color: "var(--text-muted)" }}>Loading team scorecard…</p>;
+  if (error && !report) return <p className="notice notice-danger">{error}</p>;
+  if (!report) return <p className="muted">Loading team scorecard…</p>;
 
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>Team scorecard</h2>
-      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+      <h2 className="page-title">Team scorecard</h2>
+      <p className="page-sub">
         {report.department === "all" ? "All departments" : report.department} · week boundaries use each
         person's own timezone.
       </p>
 
       {report.banner && (
-        <div className="card" style={{ border: "1px solid var(--warning)" }}>
-          <p style={{ margin: 0, color: "var(--warning)", fontSize: 13 }}>{report.banner}</p>
-          <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+        <div className="card card-warn">
+          <p className="notice notice-warning mb-2">{report.banner}</p>
+          <p className="text-micro muted m-0">
             Weights in use: {Object.entries(report.weights).map(([k, v]) => `${k} ${v}%`).join(" · ")}
           </p>
         </div>
       )}
 
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-      {ratingNotice && <p style={{ color: "var(--success)" }}>{ratingNotice}</p>}
-      {/* __TEAM_JSX__ */}
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      {error && <p className="notice notice-danger">{error}</p>}
+      {ratingNotice && <p className="notice notice-success">{ratingNotice}</p>}
+      <div className="card card-flush">
         <table>
           <thead>
             <tr>
@@ -146,13 +167,18 @@ export default function TeamScorecard() {
             {report.members.map((m) => (
               <tr key={m.employee.id}>
                 <td>
-                  {m.employee.name}
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {m.employee.department} · {m.employee.timezone}
-                    {m.employee.reducedMonitoring ? " · reduced monitoring" : ""}
+                  <div className="person">
+                    <Avatar name={m.employee.name} size="sm" />
+                    <div>
+                      <div className="person-name">{m.employee.name}</div>
+                      <div className="person-meta">
+                        {m.employee.department} · {m.employee.timezone}
+                        {m.employee.reducedMonitoring ? " · reduced monitoring" : ""}
+                      </div>
+                    </div>
                   </div>
                 </td>
-                <td style={{ fontWeight: 700 }}>{m.week.score === null ? "—" : m.week.score}</td>
+                <td className="cell-strong">{m.week.score === null ? "—" : m.week.score}</td>
                 <td>{m.week.inputs.tasksCompleted}</td>
                 <td>{m.week.inputs.onTimePct === null ? "—" : `${m.week.inputs.onTimePct}%`}</td>
                 <td>
@@ -161,17 +187,16 @@ export default function TeamScorecard() {
                     : `${m.week.inputs.estimateAccuracyPct}%`}
                 </td>
                 <td>{m.week.inputs.reopenedCount}</td>
-                <td style={{ color: "var(--text-muted)" }}>{m.week.inputs.activityIdlePct}%</td>
-                <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  {m.trend.map((t) => (t.score === null ? "–" : t.score)).join(" · ")}
+                <td className="cell-muted">{m.week.inputs.activityIdlePct}%</td>
+                <td>
+                  <TrendStrip rows={m.trend} />
                 </td>
                 <td>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <div className="cell-actions">
                     {[1, 2, 3, 4, 5].map((s) => (
                       <button
                         key={s}
-                        className="btn btn-outline"
-                        style={{ padding: "3px 8px", fontSize: 12 }}
+                        className="btn btn-outline btn-sm"
                         onClick={() => void submitRating(m.employee.id, s)}
                         title={`Rate ${m.employee.name} ${s}/5`}
                       >
@@ -184,7 +209,7 @@ export default function TeamScorecard() {
             ))}
             {report.members.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                <td colSpan={9} className="cell-empty">
                   No tracked employees in your scope yet.
                 </td>
               </tr>
@@ -194,20 +219,18 @@ export default function TeamScorecard() {
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Optional note for the next rating</h3>
+        <h3 className="card-title">Optional note for the next rating</h3>
         <textarea
           rows={2}
           value={ratingNote}
           onChange={(e) => setRatingNote(e.target.value)}
           placeholder="Context for the rating (visible to administrators, not used by the formula)"
         />
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          {report.note}
-        </p>
+        <p className="text-xs muted mb-0">{report.note}</p>
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Recent ratings</h3>
+        <h3 className="card-title">Recent ratings</h3>
         <table>
           <thead>
             <tr>

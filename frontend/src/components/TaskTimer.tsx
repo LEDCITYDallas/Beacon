@@ -55,9 +55,9 @@ export default function TaskTimer({
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+    <div className="timer-row">
       <div className="timer-display">{formatDuration(base + tick)}</div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="row">
         {!running && task.status !== "COMPLETED" && (
           <button className="btn" onClick={start}>
             {task.status === "PAUSED" ? "Resume" : "Start"}

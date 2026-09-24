@@ -1,4 +1,17 @@
+/* =========================================================================
+   LED City Workforce - global theme (tokens + shared classes)
+
+   Styling only: every screen draws its colour, spacing, radius and type size
+   from the tokens below instead of one-off inline values, so the app reads as
+   one product instead of nine screens.
+
+   Section 2: DARK is the default palette. [data-theme="light"] is the opt-in
+   toggle in the sidebar and only overrides the surface/ink tokens - the accent
+   teal and the layout are identical in both modes.
+   ========================================================================= */
+
 :root {
+  /* --- surfaces + text (unchanged palette) --- */
   --bg: #0d0d0d;
   --surface: #111111;
   --surface-2: #161616;
@@ -6,9 +19,9 @@
   --text: #f2f2f2;
   --text-muted: rgba(255, 255, 255, 0.4);
 
-  /* Placeholder accent - final branding not confirmed yet (Section 2/12,
-     options were Relay / Compass / LED City Pulse / Sync). Using a teal
-     as a neutral placeholder distinct from the purple EMS/MDOTA theme. */
+  /* Accent: the existing placeholder teal (Section 2/12 - final branding not
+     confirmed yet). Deliberately kept as the single accent; "Ready"/"Active"
+     statuses already use this family, so nothing new is introduced here. */
   --accent: #14b8a6;
   --accent-hover: #0d9488;
   --accent-light: #5eead4;
@@ -16,8 +29,54 @@
   --danger: #ef4444;
   --warning: #f59e0b;
   --success: #22c55e;
+
+  /* --- derived tints: one source for the soft badge/panel backgrounds --- */
+  --accent-soft: rgba(20, 184, 166, 0.14);
+  --accent-line: rgba(20, 184, 166, 0.45);
+  --success-soft: rgba(34, 197, 94, 0.15);
+  --warning-soft: rgba(245, 158, 11, 0.15);
+  --danger-soft: rgba(239, 68, 68, 0.15);
+  --neutral-soft: rgba(148, 163, 184, 0.15);
+
+  /* Ink = readable text colour when it sits on the matching soft tint. */
+  --accent-ink: var(--accent-light);
+  --success-ink: var(--success);
+  --warning-ink: var(--warning);
+  --danger-ink: var(--danger);
+  --neutral-ink: var(--text-muted);
+
+  /* --- spacing scale (4px rhythm, one scale for every card) --- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* --- radius scale --- */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* --- type scale --- */
+  --t-title: 24px;
+  --t-section: 15px;
+  --t-body: 14px;
+  --t-small: 13px;
+  --t-label: 12px;
+  --t-micro: 11px;
+
+  --w-title: 650;
+  --w-section: 600;
+  --w-value: 700;
+
+  --pad-card: var(--sp-5);
+  --sidebar-w: 232px;
+  --font: "Inter", system-ui, -apple-system, sans-serif;
 }
 
+/* Light mode: surfaces + inks only. Dark stays the default (no attribute). */
 [data-theme="light"] {
   --bg: #f7f7f7;
   --surface: #ffffff;
@@ -25,6 +84,13 @@
   --border: rgba(0, 0, 0, 0.08);
   --text: #111111;
   --text-muted: rgba(0, 0, 0, 0.45);
+
+  /* Light mode needs darker ink on the same soft tints; the accent itself is
+     untouched. */
+  --accent-ink: #0f766e;
+  --success-ink: #15803d;
+  --warning-ink: #b45309;
+  --danger-ink: #b91c1c;
 }
 
 * {
@@ -33,10 +99,18 @@
 
 body {
   margin: 0;
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-family: var(--font);
+  font-size: var(--t-body);
   background: var(--bg);
   color: var(--text);
 }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ shell */
 
 .app-shell {
   display: flex;
@@ -44,10 +118,13 @@ body {
 }
 
 .sidebar {
-  width: 220px;
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
   background: linear-gradient(180deg, var(--surface), var(--bg));
   border-right: 1px solid var(--border);
-  padding: 20px 14px;
+  padding: var(--sp-5) var(--sp-3);
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar h2 {
@@ -56,33 +133,92 @@ body {
   margin-bottom: 24px;
 }
 
+.brand {
+  margin: 0 0 var(--sp-5);
+  font-size: 15px;
+  font-weight: var(--w-title);
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+}
+
+.nav-section {
+  margin: var(--sp-4) 0 var(--sp-1);
+  padding: 0 var(--sp-3);
+  font-size: var(--t-micro);
+  font-weight: var(--w-value);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .nav-link {
   display: block;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   text-decoration: none;
-  margin-bottom: 4px;
-  font-size: 14px;
+  margin-bottom: var(--sp-1);
+  font-size: var(--t-body);
+  border-left: 3px solid transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.nav-link:hover {
+  color: var(--text);
+  background: var(--surface-2);
 }
 
 .nav-link.active {
-  background: rgba(20, 184, 166, 0.15);
+  background: var(--accent-soft);
   border-left: 3px solid var(--accent);
   color: var(--text);
 }
 
+.sidebar-foot {
+  margin-top: var(--sp-5);
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.user-chip-body {
+  min-width: 0;
+}
+
+.user-chip-name {
+  margin: 0;
+  font-size: var(--t-label);
+  font-weight: var(--w-section);
+}
+
+.user-chip-meta {
+  margin: 2px 0 0;
+  font-size: var(--t-micro);
+  color: var(--text-muted);
+}
+
 .main {
   flex: 1;
-  padding: 28px 32px;
+  min-width: 0;
+  padding: var(--sp-6) var(--sp-6) var(--sp-6) var(--sp-5);
+  max-width: 1280px;
 }
+
+/* ------------------------------------------------------------------ cards */
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 16px;
+  border-radius: var(--r-lg);
+  padding: var(--pad-card);
+  margin-bottom: var(--sp-4);
 }
 
 .card-current-task {
@@ -90,15 +226,61 @@ body {
   box-shadow: 0 0 24px rgba(20, 184, 166, 0.15);
 }
 
+/* Nested card (a panel inside a card): one step up in surface, no heavier. */
+.card-inset {
+  background: var(--surface-2);
+}
+
+.card-flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.card-accent {
+  border-color: var(--accent-line);
+}
+
+.card-warn {
+  border-color: var(--warning-soft);
+}
+
+.card-danger {
+  border-color: var(--danger-soft);
+}
+
+/* Title row inside a card: heading left, action right. */
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.card-intro {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--t-small);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------- buttons + pills */
+
 .btn {
   background: linear-gradient(135deg, var(--accent), var(--accent-hover));
   color: #04120f;
   border: none;
   padding: 10px 18px;
-  border-radius: 8px;
-  font-weight: 600;
+  border-radius: var(--r-md);
+  font-weight: var(--w-section);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--t-body);
+  font-family: inherit;
+  transition: filter 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .btn:disabled {
@@ -112,42 +294,362 @@ body {
   color: var(--text);
 }
 
+.btn-outline:hover:not(:disabled) {
+  background: var(--surface-2);
+  filter: none;
+}
+
 .btn-danger {
   background: linear-gradient(135deg, var(--danger), #b91c1c);
   color: #fff;
 }
 
+/* Table-row / inline action buttons. */
+.btn-sm {
+  padding: var(--sp-1) 10px;
+  font-size: var(--t-label);
+  border-radius: var(--r-sm);
+}
+
+.btn-block {
+  width: 100%;
+}
+
 .badge {
   display: inline-block;
   padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: var(--r-pill);
+  font-size: var(--t-label);
+  font-weight: var(--w-section);
+  white-space: nowrap;
 }
 
-.badge-ready { background: rgba(34,197,94,0.15); color: var(--success); }
-.badge-blocked { background: rgba(239,68,68,0.15); color: var(--danger); }
-.badge-in_progress { background: rgba(20,184,166,0.15); color: var(--accent-light); }
-.badge-paused { background: rgba(245,158,11,0.15); color: var(--warning); }
-.badge-completed { background: rgba(148,163,184,0.15); color: var(--text-muted); }
+.badge-ready { background: var(--success-soft); color: var(--success-ink); }
+.badge-blocked { background: var(--danger-soft); color: var(--danger-ink); }
+.badge-in_progress { background: var(--accent-soft); color: var(--accent-ink); }
+.badge-paused { background: var(--warning-soft); color: var(--warning-ink); }
+.badge-completed { background: var(--neutral-soft); color: var(--text-muted); }
+
+/* Header-level status pill (e.g. the Active / On break chip beside a title). */
+.pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--t-label);
+  font-weight: var(--w-section);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.pill-accent { background: var(--accent-soft); color: var(--accent-ink); }
+.pill-success { background: var(--success-soft); color: var(--success-ink); }
+.pill-warning { background: var(--warning-soft); color: var(--warning-ink); }
+.pill-danger { background: var(--danger-soft); color: var(--danger-ink); }
+.pill-neutral { background: var(--neutral-soft); color: var(--text-muted); }
+
+/* Provider label on assistant output (was plain "[MOCK]" text). */
+.pill-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: var(--t-micro);
+}
+
+/* ----------------------------------------------------------------- notices */
+
+.notice {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: var(--t-small);
+}
+
+.notice-success { border-color: var(--success-soft); color: var(--success-ink); }
+.notice-danger { border-color: var(--danger-soft); color: var(--danger-ink); }
+.notice-warning { border-color: var(--warning-soft); color: var(--warning-ink); }
+.notice-accent { border-color: var(--accent-line); color: var(--accent-ink); }
+
+/* ------------------------------------------------------- avatars + people */
+
+.avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  font-size: var(--t-micro);
+  font-weight: var(--w-value);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+.avatar-sm { width: 22px; height: 22px; font-size: 10px; }
+.avatar-lg { width: 36px; height: 36px; font-size: var(--t-small); }
+
+/* Tints reuse the status hues already in the badge palette; the tint is picked
+   deterministically from the name so a person always keeps the same chip. */
+.avatar-tint-1 { background: var(--accent-soft); color: var(--accent-ink); }
+.avatar-tint-2 { background: var(--success-soft); color: var(--success-ink); }
+.avatar-tint-3 { background: var(--warning-soft); color: var(--warning-ink); }
+.avatar-tint-4 { background: var(--danger-soft); color: var(--danger-ink); }
+.avatar-tint-5 { background: var(--neutral-soft); color: var(--text); }
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.person-name {
+  font-weight: var(--w-section);
+  white-space: nowrap;
+}
+
+.person-meta {
+  font-size: var(--t-micro);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------- stats */
+
+/* One row of equal-weight stat cells: big number on top, small label under. */
+.stat-row {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  flex: 1 1 128px;
+  min-width: 128px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.stat-card-accent {
+  border-color: var(--accent-line);
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: var(--w-value);
+  line-height: 1.15;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-value-sm {
+  font-size: 20px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-value-quiet { color: var(--text); }
+.stat-value-muted { color: var(--text-muted); }
+
+.stat-label {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--t-label);
+  color: var(--text-muted);
+}
+
+.stat-unit {
+  font-size: var(--t-label);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Large score figure sitting beside a card title. */
+.score-hero {
+  font-size: 30px;
+  font-weight: var(--w-value);
+  line-height: 1.1;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------- period strip (week / month) */
+
+/* Compact equal-width cells, one per period - used for the 4-week scorecard
+   trends. Works for a 7-cell daily view without any change. */
+.strip {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: var(--sp-3);
+}
+
+.strip-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-1);
+  text-align: center;
+}
+
+.strip-cell-current {
+  border-color: var(--accent-line);
+}
+
+.strip-cell-value {
+  font-size: var(--t-body);
+  font-weight: var(--w-section);
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-cell-value-empty {
+  color: var(--text-muted);
+}
+
+.strip-cell-label {
+  font-size: var(--t-micro);
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* In-table variant: same cells, left aligned and tighter. */
+.strip-inline {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: 0;
+  min-width: 180px;
+}
+
+.strip-inline .strip-cell {
+  padding: 3px var(--sp-1);
+}
+
+.strip-inline .strip-cell-value {
+  font-size: var(--t-label);
+}
+
+/* ------------------------------------------------------- page structure */
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-1);
+}
+
+.page-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  font-size: var(--t-title);
+  font-weight: var(--w-title);
+  letter-spacing: -0.01em;
+}
+
+.page-sub {
+  margin: var(--sp-1) 0 var(--sp-5);
+  font-size: var(--t-body);
+  color: var(--text-muted);
+}
+
+.section-title {
+  margin: var(--sp-6) 0 var(--sp-3);
+  font-size: var(--t-section);
+  font-weight: var(--w-section);
+}
+
+.card-title {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--t-section);
+  font-weight: var(--w-section);
+}
+
+.card-title-quiet {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--t-body);
+  font-weight: var(--w-section);
+}
+
+/* ------------------------------------------------------------------- forms */
 
 input, select, textarea {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
   padding: 9px 12px;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--r-md);
+  font-size: var(--t-body);
+  font-family: inherit;
   width: 100%;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-line);
 }
 
 label {
   display: block;
-  font-size: 13px;
+  font-size: var(--t-small);
   color: var(--text-muted);
-  margin-bottom: 4px;
-  margin-top: 12px;
+  margin-bottom: var(--sp-1);
+  margin-top: var(--sp-3);
 }
+
+.field-row {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.field {
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+
+.field-wide {
+  flex: 1 1 260px;
+}
+
+/* Checkbox / radio rows: label styling without the block margins. */
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--t-small);
+  color: var(--text);
+}
+
+.choice input {
+  width: auto;
+  margin: 0;
+}
+
+.choice-top {
+  align-items: flex-start;
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: var(--sp-4);
+}
+
+/* ------------------------------------------------------- tables + lists */
 
 table {
   width: 100%;
@@ -158,19 +660,271 @@ th, td {
   text-align: left;
   padding: 10px 8px;
   border-bottom: 1px solid var(--border);
-  font-size: 14px;
+  font-size: var(--t-body);
+  vertical-align: top;
 }
 
 th {
   color: var(--text-muted);
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--w-section);
+  font-size: var(--t-label);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.cell-strong {
+  font-weight: var(--w-value);
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-muted {
+  color: var(--text-muted);
+}
+
+.cell-empty {
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.cell-actions {
+  display: flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+
+/* Table inside a flush card: the header row gets the inset surface. */
+.card-flush thead th {
+  background: var(--surface-2);
+}
+
+.card-flush th:first-child,
+.card-flush td:first-child {
+  padding-left: var(--sp-5);
+}
+
+.card-flush th:last-child,
+.card-flush td:last-child {
+  padding-right: var(--sp-5);
+}
+
+/* A vertical list of rows inside a card (Up next, proposals, sessions). */
+.list {
+  margin: 0;
+  padding: 0;
+}
+
+.list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+/* Card-shaped list rows (Up next, assistant suggestions): keep the card
+   padding token, just tighten the vertical rhythm a little. */
+.card.list-row {
+  padding: var(--sp-4) var(--sp-5);
+}
+
+/* Single line of supporting detail inside a list row. */
+.list-meta {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--t-small);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Group heading inside a card list (counts in the alert panel). */
+.list-head {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--t-small);
+  font-weight: var(--w-section);
+}
+
+.list-name {
+  font-size: var(--t-body);
+  font-weight: var(--w-section);
+  margin: 0;
+}
+
+/* --------------------------------------------------- assistant + evidence */
+
+/* The question composer: separated from the response by a rule, so the answer
+   below reads as a distinct block instead of more of the form. */
+.ask-form {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+/* Assistant response: inset surface + accent rail on the left. */
+.answer-block {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+/* Assistant answer body: preserves the provider's line breaks. */
+.answer-text {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.evidence {
+  margin-top: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border);
+}
+
+/* ------------------------------------------------------- live view + misc */
+
+.live-frame {
+  margin-top: var(--sp-3);
+  background: #000;
+  border-radius: var(--r-md);
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.live-frame img {
+  max-width: 100%;
+  border-radius: var(--r-md);
+}
+
+/* Active / On break text in tables (was a per-cell inline colour). */
+.status-line {
+  font-size: var(--t-label);
+  font-weight: var(--w-section);
+}
+
+.status-line-active { color: var(--success-ink); }
+.status-line-break { color: var(--warning-ink); }
 
 .timer-display {
   font-size: 32px;
-  font-weight: 700;
+  font-weight: var(--w-value);
   font-variant-numeric: tabular-nums;
-  color: var(--accent-light);
+  color: var(--accent-ink);
 }
+
+/* Centred single-card screens (login, consent). */
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: var(--sp-5);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  margin-bottom: 0;
+}
+
+.auth-card-wide {
+  max-width: 560px;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+/* ---------------------------------------------------------- text helpers */
+
+.m-0 { margin: 0; }
+.mb-0 { margin-bottom: 0; }
+.mb-2 { margin-bottom: var(--sp-2); }
+.mb-4 { margin-bottom: var(--sp-4); }
+.mt-0 { margin-top: 0; }
+.mt-2 { margin-top: var(--sp-2); }
+.mt-3 { margin-top: var(--sp-3); }
+.mt-4 { margin-top: var(--sp-4); }
+.mt-5 { margin-top: var(--sp-5); }
+
+.muted { color: var(--text-muted); }
+.capitalize { text-transform: capitalize; }
+
+.text-accent { color: var(--accent-ink); }
+.text-success { color: var(--success-ink); }
+.text-warning { color: var(--warning-ink); }
+.text-danger { color: var(--danger-ink); }
+.d-block { display: block; }
+.mt-1 { margin-top: var(--sp-1); }
+.ink-accent { color: var(--accent-ink); }
+.ink-success { color: var(--success-ink); }
+.ink-warning { color: var(--warning-ink); }
+.ink-danger { color: var(--danger-ink); }
+
+.text-sm { font-size: var(--t-small); }
+.text-xs { font-size: var(--t-label); }
+.text-micro { font-size: var(--t-micro); }
+.strong { font-weight: var(--w-section); }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.row-wrap {
+  flex-wrap: wrap;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+/* Timer row: clock on the left, controls on the right. */
+.timer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.baseline {
+  align-items: baseline;
+}
+
+.stack-2 > * + * {
+  margin-top: var(--sp-2);
+}
+
+.legal {
+  color: var(--text-muted);
+  font-size: var(--t-body);
+  line-height: 1.6;
+}
+
+.link {
+  color: var(--accent-ink);
+}
+

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import client from "../api/client";
 import { Task } from "../types";
 import StatusBadge from "../components/StatusBadge";
+import Avatar from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
 import { formatDate, relativeFrom } from "../utils/format";
 
@@ -140,42 +141,40 @@ export default function ManagerDashboard() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2>Team queue</h2>
+      <div className="page-head">
+        <h2 className="page-title">Team queue</h2>
         <button className="btn" onClick={() => setShowForm((s) => !s)}>
           {showForm ? "Close" : "+ New task"}
         </button>
       </div>
-      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+      <p className="page-sub">
         {user?.role === "MANAGER"
           ? `Scoped to ${user.department} — other departments are not visible to you.`
           : "Global scope (Super Admin)."}
       </p>
 
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-      {notice && <p style={{ color: "var(--success)" }}>{notice}</p>}
+      {error && <p className="notice notice-danger">{error}</p>}
+      {notice && <p className="notice notice-success">{notice}</p>}
       {alerts && (
-        <div className="card" style={{ border: "1px solid var(--warning)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ margin: 0, color: "var(--warning)" }}>Needs attention</h3>
-            <button className="btn btn-outline" onClick={() => void emailAlertSummary()}>
+        <div className="card card-warn">
+          <div className="card-head">
+            <h3 className="card-title mb-0">Needs attention</h3>
+            <button className="btn btn-outline btn-sm" onClick={() => void emailAlertSummary()}>
               Email me this summary
             </button>
           </div>
 
           {alerts.overdue.length === 0 && alerts.blocked.length === 0 && (
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-              Nothing overdue or blocked right now.
-            </p>
+            <p className="list-meta">Nothing overdue or blocked right now.</p>
           )}
 
           {alerts.overdue.length > 0 && (
             <>
-              <p style={{ margin: "8px 0 4px", fontSize: 13, color: "var(--danger)" }}>
-                <strong>{alerts.overdue.length} overdue</strong>
+              <p className="mt-2 mb-2">
+                <span className="pill pill-danger">{alerts.overdue.length} overdue</span>
               </p>
               {alerts.overdue.slice(0, 5).map((t) => (
-                <p key={t._id} style={{ margin: "2px 0", fontSize: 13, color: "var(--text-muted)" }}>
+                <p key={t._id} className="list-meta mb-0">
                   {t.title} — due {formatDate(t.dueDate, user?.timezone)} · {assigneeName(t)}
                 </p>
               ))}
@@ -184,12 +183,14 @@ export default function ManagerDashboard() {
 
           {alerts.blocked.length > 0 && (
             <>
-              <p style={{ margin: "8px 0 4px", fontSize: 13, color: "var(--warning)" }}>
-                <strong>{alerts.blocked.length} blocked</strong> — reasons in aggregate only, never
-                used to single anyone out (Section 4)
+              <p className="mt-2 mb-2">
+                <span className="pill pill-warning">{alerts.blocked.length} blocked</span>{" "}
+                <span className="muted text-xs">
+                  reasons in aggregate only, never used to single anyone out (Section 4)
+                </span>
               </p>
               {alerts.blocked.slice(0, 5).map((t) => (
-                <p key={t._id} style={{ margin: "2px 0", fontSize: 13, color: "var(--text-muted)" }}>
+                <p key={t._id} className="list-meta mb-0">
                   {t.title} —{" "}
                   {t.blockedReason?.type === "NOT_CONFIDENT"
                     ? "needs guidance"
@@ -200,7 +201,7 @@ export default function ManagerDashboard() {
           )}
 
           {alerts.delivery && (
-            <p style={{ margin: "10px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            <p className="list-meta text-micro">
               delivery driver: {alerts.delivery.masterSwitch} · email transport:{" "}
               {alerts.delivery.email.transport} ({alerts.delivery.email.live ? "live" : "simulated"}) ·
               WhatsApp {alerts.delivery.whatsapp.live ? "live" : "simulated"}
@@ -209,9 +210,9 @@ export default function ManagerDashboard() {
 
           {alerts.recentNotifications && alerts.recentNotifications.length > 0 && (
             <>
-              <h4 style={{ margin: "12px 0 4px" }}>Recent notifications</h4>
+              <h4 className="card-title-quiet mt-4">Recent notifications</h4>
               {alerts.recentNotifications.map((n, i) => (
-                <p key={`${n.subject}-${i}`} style={{ margin: "2px 0", fontSize: 12, color: "var(--text-muted)" }}>
+                <p key={`${n.subject}-${i}`} className="list-meta text-xs mb-0">
                   [{n.channel}] {n.subject} — {n.status}
                   {n.driver ? ` (${n.driver})` : ""} · {relativeFrom(n.at)}
                 </p>
@@ -230,7 +231,7 @@ export default function ManagerDashboard() {
           }}
         />
       )}
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div className="card card-flush">
         <table>
           <thead>
             <tr>
@@ -253,7 +254,7 @@ export default function ManagerDashboard() {
                   <td>
                     {t.title}
                     {row.pendingCompletionProposal?.isPending && (
-                      <div style={{ fontSize: 11, color: "var(--accent-light)" }}>
+                      <div className="text-micro text-accent">
                         completion proposed — {row.pendingCompletionProposal.detectedSignal}
                         {row.pendingCompletionProposal.confidence
                           ? ` (${Math.round(row.pendingCompletionProposal.confidence * 100)}%)`
@@ -263,30 +264,38 @@ export default function ManagerDashboard() {
                       </div>
                     )}
                     {row.flagged && (
-                      <div style={{ fontSize: 11, color: "var(--warning)" }}>
+                      <div className="text-micro text-warning">
                         flagged{row.flagNote ? `: ${row.flagNote}` : ""}
                       </div>
                     )}
                   </td>
                   <td>
-                    {assigneeName(row)}
-                    {typeof row.assignedTo === "object" && (
-                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {people.find((p2) => p2.id === (row.assignedTo as { _id: string })._id)?.timezone ||
-                          ""}
+                    <div className="person">
+                      {typeof row.assignedTo === "object" && (
+                        <Avatar name={assigneeName(row)} size="sm" />
+                      )}
+                      <div>
+                        <div className="person-name">{assigneeName(row)}</div>
+                        {typeof row.assignedTo === "object" && (
+                          <div className="person-meta">
+                            {people.find(
+                              (p2) => p2.id === (row.assignedTo as { _id: string })._id
+                            )?.timezone || ""}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </td>
-                  <td style={{ fontSize: 12 }}>
+                  <td>
                     {p ? (
                       <span
-                        style={{
-                          color: p.status === "ACTIVE" ? "var(--success)" : "var(--warning)",
-                        }}
+                        className={`status-line ${
+                          p.status === "ACTIVE" ? "status-line-active" : "status-line-break"
+                        }`}
                       >
                         {p.status === "ACTIVE" ? "Active" : "On break"}
                         {p.activityConfidence === "UNKNOWN" ? " (?)" : ""}
-                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        <div className="text-micro muted">
                           {p.lastActivityAt ? relativeFrom(p.lastActivityAt) : "no signal"}
                         </div>
                       </span>
@@ -299,17 +308,16 @@ export default function ManagerDashboard() {
                   </td>
                   <td>{t.priority}</td>
                   <td>{formatDate(t.dueDate, user?.timezone)}</td>
-                  <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  <td className="text-xs muted">
                     {row.blockedReason?.type === "NOT_CONFIDENT" && "Needs guidance"}
                     {row.blockedReason?.type === "WAITING_ON_OTHER" && "Waiting on other"}
                     {!row.blockedReason?.type && "—"}
                   </td>
                   <td>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <div className="cell-actions">
                       {t.status !== "COMPLETED" && (
                         <button
-                          className="btn btn-outline"
-                          style={{ padding: "4px 10px", fontSize: 12 }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => void toggleFlag(row)}
                         >
                           {row.flagged ? "Unflag" : "Flag"}
@@ -317,8 +325,7 @@ export default function ManagerDashboard() {
                       )}
                       {t.status === "COMPLETED" && (
                         <button
-                          className="btn btn-outline"
-                          style={{ padding: "4px 10px", fontSize: 12 }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => void reopen(row)}
                         >
                           Reopen
@@ -331,7 +338,7 @@ export default function ManagerDashboard() {
             })}
             {tasks.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ color: "var(--text-muted)", textAlign: "center" }}>
+                <td colSpan={8} className="cell-empty">
                   No tasks yet.
                 </td>
               </tr>
@@ -339,7 +346,7 @@ export default function ManagerDashboard() {
           </tbody>
         </table>
       </div>
-      <p style={{ fontSize: 11, color: "var(--text-muted)" }}>
+      <p className="text-micro muted">
         Activity shows state only (Active / On break) — this system stores no keystrokes, screen
         content, webcam or audio anywhere.
       </p>
@@ -400,8 +407,8 @@ function CreateTaskForm({
         required
       />
 
-      <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}>
+      <div className="field-row">
+        <div className="field">
           <label>Estimated hours</label>
           <input
             type="number"
@@ -411,11 +418,11 @@ function CreateTaskForm({
             onChange={(e) => setEstimatedHours(Number(e.target.value))}
           />
         </div>
-        <div style={{ flex: 1 }}>
+        <div className="field">
           <label>Due date</label>
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
         </div>
-        <div style={{ flex: 1 }}>
+        <div className="field">
           <label>Priority</label>
           <select value={priority} onChange={(e) => setPriority(e.target.value)}>
             <option value="LOW">Low</option>
@@ -436,14 +443,14 @@ function CreateTaskForm({
         ))}
       </select>
       {people.length === 0 && (
-        <p style={{ fontSize: 12, color: "var(--warning)" }}>
+        <p className="notice notice-warning">
           No selectable people — a manager only sees their own department.
         </p>
       )}
 
       <label>External record (optional — links this task to Zoho / WorkDrive / CMS)</label>
-      <div style={{ display: "flex", gap: 12 }}>
-        <select value={refSource} onChange={(e) => setRefSource(e.target.value)} style={{ flex: 1 }}>
+      <div className="field-row">
+        <select value={refSource} onChange={(e) => setRefSource(e.target.value)} className="field">
           <option value="">No external link</option>
           <option value="ZOHO_CRM">Zoho CRM</option>
           <option value="ZOHO_BOOKS">Zoho Books</option>
@@ -452,7 +459,7 @@ function CreateTaskForm({
           <option value="WEBSITE_CMS">Website CMS</option>
         </select>
         <input
-          style={{ flex: 1 }}
+          className="field"
           value={refId}
           onChange={(e) => setRefId(e.target.value)}
           placeholder="External id, e.g. 1042"
@@ -460,9 +467,9 @@ function CreateTaskForm({
         />
       </div>
 
-      {error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>}
+      {error && <p className="notice notice-danger">{error}</p>}
 
-      <button className="btn" style={{ marginTop: 14 }}>
+      <button className="btn form-actions">
         Create task
       </button>
     </form>

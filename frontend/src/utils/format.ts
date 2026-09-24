@@ -51,6 +51,25 @@ export function relativeFrom(value: string | Date | null | undefined): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+// Compact "Sep 21" label for the scorecard period strips (design pass). The
+// scorecard trend data sends zone-local day keys (YYYY-MM-DD) rather than
+// instants, so those are formatted as plain calendar days - pushing them
+// through a timezone would slide the label onto the previous day.
+export function formatDayShort(value: string | Date | null | undefined, timeZone?: string): string {
+  if (!value) return "—";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
+  }
+  const tz = timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return new Intl.DateTimeFormat(undefined, { timeZone: tz, month: "short", day: "numeric" }).format(
+    new Date(value)
+  );
+}
+
 export function todayInZone(timeZone?: string): string {
   const tz = timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const parts = new Intl.DateTimeFormat("en-CA", {
