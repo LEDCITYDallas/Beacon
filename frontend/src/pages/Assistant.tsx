@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import client from "../api/client";
-
-interface AssistantAnswer {
-  text: string;
-  provider: string;
-  model: string;
-}
+import AssistantChat from "../components/AssistantChat";
+import PageHeader from "../components/PageHeader";
+import StatusBadge from "../components/StatusBadge";
+import LoadingState from "../components/LoadingState";
+import { useAuth } from "../context/AuthContext";
+import { Task, TaskStatus, Priority } from "../types";
+import { formatDate } from "../utils/format";
 
 interface Proposal {
   _id: string;
@@ -42,124 +44,189 @@ function providerTag(provider: string, fallback?: boolean) {
   );
 }
 
-// Personalised next-up queue (Section 5 feature 1): deterministic ranking from
-// the employee's own task + dependency data, with the reason for each position
-// shown so it is never a black box.
-function NextUpPanel() {
-  const [queue, setQueue] = useState<{
-    nextUp: { taskId: string; title: string; score: number; reasons: string[]; dueDateLocal: string }[];
-    blocked: { title: string; reason: string; waitingOn: string[] }[];
-    awaitingConfirmation: { title: string; signal: string }[];
-    note: string;
-    timezone: string;
-  } | null>(null);
-
-  useEffect(() => {
-    client
-      .get("/assistant/next-up")
-      .then((res) => setQueue(res.data))
-      .catch(() => {});
-  }, []);
-
-  if (!queue) return null;
-
-  return (
-    <div className="card">
-      <h3 className="card-title">What to do next</h3>
-      <p className="card-intro">
-        From your own tasks and dependencies, in your timezone ({queue.timezone}).
-      </p>
-      {queue.nextUp.length === 0 && <p className="muted m-0">Nothing ready right now.</p>}
-      {queue.nextUp.map((t, i) => (
-        <div key={t.taskId} className="list-row card-inset card">
-          <div>
-            <strong>
-              {i + 1}. {t.title}
-            </strong>
-            <p className="list-meta mb-0">
-              Due {t.dueDateLocal} · {t.reasons.join(", ")}
-            </p>
-          </div>
-        </div>
-      ))}
-
-      {queue.blocked.length > 0 && (
-        <>
-          <h4 className="card-title-quiet mt-3">Waiting, not your problem yet</h4>
-          {queue.blocked.map((b) => (
-            <p key={b.title} className="list-meta mb-0">
-              {b.title} — {b.reason === "NOT_CONFIDENT" ? "needs guidance" : "waiting on other"}
-              {b.waitingOn.length ? ` (${b.waitingOn.join(", ")})` : ""}
-            </p>
-          ))}
-        </>
-      )}
-
-      {queue.awaitingConfirmation.length > 0 && (
-        <>
-          <h4 className="card-title-quiet mt-3">Waiting for your confirmation</h4>
-          {queue.awaitingConfirmation.map((a) => (
-            <p key={a.title} className="list-meta mb-0 text-xs text-accent">
-              {a.title} — suggested by {a.signal}
-            </p>
-          ))}
-        </>
-      )}
-
-      <p className="text-micro muted mt-2 mb-0">{queue.note}</p>
-    </div>
-  );
+interface RankedTask {
+  taskId: string;
+  title: string;
+  status?: TaskStatus;
+  priority?: Priority;
+  dueDateLocal: string;
+  estimatedHours?: number;
+  reasons: string[];
 }
 
-// Q&A: read-only, no approval needed (approval-gates matrix row 1).
-function AskPanel() {
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<AssistantAnswer | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+interface NextUpResponse {
+  generatedFor?: string;
+  nextUp: RankedTask[];
+  blocked: { title: string; reason: string; waitingOn: string[] }[];
+  awaitingConfirmation: { title: string; signal: string }[];
+  note: string;
+  timezone: string;
+}
 
-  async function ask() {
-    if (!question.trim()) return;
-    setBusy(true);
-    setError("");
-    setAnswer(null);
-    try {
-      const res = await client.post("/assistant/ask", { question });
-      setAnswer(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "The assistant could not answer right now. Try again.");
-    } finally {
-      setBusy(false);
-    }
+function apiMessage(err: unknown, fallback: string) {
+  if (err && typeof err === "object" && "response" in err) {
+    const message = (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+    if (message) return message;
   }
+  return fallback;
+}
+
+function PriorityMark({ priority }: { priority?: Priority }) {
+  if (!priority) return null;
+  const tone = priority === "URGENT" ? "pill-danger" : priority === "HIGH" ? "pill-warning" : "pill-neutral";
+  const label = priority.charAt(0) + priority.slice(1).toLowerCase();
+  return <span className={`pill ${tone}`}>{label}</span>;
+}
+
+// Context already returned for this signed-in user: own current task, plus the
+// ranked next-up payload. Nothing is added that those responses do not contain.
+function ContextPanel() {
+  const { user } = useAuth();
+  const [current, setCurrent] = useState<Task | null>(null);
+  const [currentReady, setCurrentReady] = useState(false);
+  const [currentError, setCurrentError] = useState("");
+  const [queue, setQueue] = useState<NextUpResponse | null>(null);
+  const [queueError, setQueueError] = useState("");
+
+  const load = useCallback(async () => {
+    setCurrentError("");
+    setQueueError("");
+    const [mine, next] = await Promise.all([
+      client.get("/tasks/my-queue").then(
+        (res) => ({ ok: true as const, data: res.data as { current: Task | null } }),
+        (err: unknown) => ({ ok: false as const, error: apiMessage(err, "Could not load your current task.") })
+      ),
+      client.get("/assistant/next-up").then(
+        (res) => ({ ok: true as const, data: res.data as NextUpResponse }),
+        (err: unknown) => ({ ok: false as const, error: apiMessage(err, "Could not load what to do next.") })
+      ),
+    ]);
+    if (mine.ok) setCurrent(mine.data.current);
+    else setCurrentError(mine.error);
+    setCurrentReady(true);
+    if (next.ok) setQueue(next.data);
+    else setQueueError(next.error);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const ranked = (queue?.nextUp || []).filter((task) => task.taskId !== current?._id);
 
   return (
-    <div className="card">
-      <h3 className="card-title">Ask your assistant</h3>
+    <aside className="card assistant-context" aria-labelledby="assistant-context-title">
+      <h2 id="assistant-context-title" className="card-title">
+        Context
+      </h2>
       <p className="card-intro">
-        Answers come from your own task data — it can't see anything you can't.
+        {queue?.generatedFor
+          ? `Tasks already visible to ${queue.generatedFor}.`
+          : "Tasks already visible to you."}
+        {queue?.timezone ? ` Times use ${queue.timezone}.` : ""}
       </p>
-      <div className="ask-form">
-        <textarea
-          rows={2}
-          placeholder="e.g. What should I work on next? What's blocked on me?"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-        />
-        <div className="form-actions">
-          <button className="btn" onClick={ask} disabled={busy || !question.trim()}>
-            {busy ? "Thinking..." : "Ask"}
+
+      <h3 className="card-title-quiet">Current task</h3>
+      {!currentReady && !currentError ? (
+        <LoadingState label="Loading your current task…" />
+      ) : null}
+      {currentError ? (
+        <div className="notice notice-danger" role="alert">
+          <p className="m-0">{currentError}</p>
+          <button type="button" className="btn btn-outline btn-sm mt-2" onClick={() => load()}>
+            Try again
           </button>
         </div>
-      </div>
-      {error && <p className="notice notice-danger">{error}</p>}
-      {answer && (
-        <div className="answer-block">
-          <p className="answer-text">{answer.text}</p>
-          <div className="mt-2">{providerTag(answer.provider)}</div>
+      ) : null}
+      {currentReady && !currentError && !current ? (
+        <div className="assistant-empty">
+          <h3>No task in progress</h3>
+          <p>Nothing assigned to you is started or paused.</p>
+          <Link className="link" to="/">
+            Open Home
+          </Link>
         </div>
-      )}
-    </div>
+      ) : null}
+      {current ? (
+        <article className="assistant-context-item">
+          <div className="assistant-context-head">
+            <h3 className="assistant-item-title">{current.title}</h3>
+            <div className="assistant-item-meta">
+              <StatusBadge status={current.status} />
+              <PriorityMark priority={current.priority} />
+            </div>
+          </div>
+          <p className="list-meta">
+            Due {formatDate(current.dueDate, user?.timezone)}
+            {typeof current.estimatedHours === "number" ? ` · ${current.estimatedHours}h estimated` : ""}
+          </p>
+          {current.definitionOfDone ? (
+            <p className="list-meta mb-0">Done when {current.definitionOfDone}</p>
+          ) : null}
+        </article>
+      ) : null}
+
+      <h3 className="card-title-quiet">What to do next</h3>
+      {!queue && !queueError ? <LoadingState label="Loading recommendations…" /> : null}
+      {queueError ? (
+        <div className="notice notice-danger" role="alert">
+          <p className="m-0">{queueError}</p>
+          <button type="button" className="btn btn-outline btn-sm mt-2" onClick={() => load()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
+      {queue && ranked.length === 0 ? (
+        <div className="assistant-empty">
+          <h3>Nothing ready</h3>
+          <p>The ranked queue has no further task for you.</p>
+        </div>
+      ) : null}
+      {ranked.map((task, index) => (
+        <article key={task.taskId} className="assistant-context-item">
+          <div className="assistant-context-head">
+            <h3 className="assistant-item-title">
+              {index + 1}. {task.title}
+            </h3>
+            <div className="assistant-item-meta">
+              {task.status ? <StatusBadge status={task.status} /> : null}
+              <PriorityMark priority={task.priority} />
+            </div>
+          </div>
+          <p className="list-meta mb-0">
+            Due {task.dueDateLocal}
+            {typeof task.estimatedHours === "number" ? ` · ${task.estimatedHours}h estimated` : ""}
+            {task.reasons.length ? ` · ${task.reasons.join(", ")}` : ""}
+          </p>
+        </article>
+      ))}
+
+      {queue && queue.blocked.length > 0 ? (
+        <>
+          <h3 className="card-title-quiet">Blocked</h3>
+          {queue.blocked.map((item) => (
+            <p key={item.title} className="list-meta mb-0">
+              {item.title} — {item.reason === "NOT_CONFIDENT" ? "needs guidance" : "waiting on other"}
+              {item.waitingOn.length ? ` (${item.waitingOn.join(", ")})` : ""}
+            </p>
+          ))}
+        </>
+      ) : null}
+
+      {queue && queue.awaitingConfirmation.length > 0 ? (
+        <>
+          <h3 className="card-title-quiet">Waiting for your confirmation</h3>
+          {queue.awaitingConfirmation.map((item) => (
+            <p key={item.title} className="list-meta mb-0">
+              {item.title}
+              {item.signal ? ` — suggested by ${item.signal}` : ""}
+            </p>
+          ))}
+        </>
+      ) : null}
+
+      {queue?.note ? <p className="assistant-hint">{queue.note}</p> : null}
+    </aside>
   );
 }
 
@@ -172,13 +239,13 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState("");
   const [fallback, setFallback] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"" | "draft" | "queue">("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
   async function generate() {
     if (!request.trim()) return;
-    setBusy(true);
+    setBusy("draft");
     setError("");
     setNote("");
     try {
@@ -191,13 +258,13 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
         err.response?.data?.message || "Draft generation failed. Try again in a moment."
       );
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
 
   async function queueForSend() {
     if (!draft.trim()) return;
-    setBusy(true);
+    setBusy("queue");
     setError("");
     try {
       await client.post("/assistant/messages", {
@@ -212,13 +279,13 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
     } catch {
       setError("Could not queue the draft.");
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
 
   return (
     <div className="card">
-      <h3 className="card-title">Draft work product</h3>
+      <h2 className="card-title">Draft</h2>
       <label>Draft type</label>
       <select value={kind} onChange={(e) => setKind(e.target.value)}>
         <option value="REPLY">Reply</option>
@@ -234,8 +301,8 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
         onChange={(e) => setRequest(e.target.value)}
       />
       <div className="form-actions">
-        <button className="btn" onClick={generate} disabled={busy || !request.trim()}>
-          {busy ? "Drafting..." : "Generate draft"}
+        <button type="button" className="btn" onClick={generate} disabled={busy !== "" || !request.trim()}>
+          {busy === "draft" ? "Drafting..." : "Generate draft"}
         </button>
       </div>
 
@@ -248,10 +315,10 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
             onChange={(e) => setDraft(e.target.value)}
           />
           <div className="form-actions">
-            <button className="btn" onClick={queueForSend} disabled={busy}>
-              Queue for send
+            <button type="button" className="btn" onClick={queueForSend} disabled={busy !== ""}>
+              {busy === "queue" ? "Queueing…" : "Queue for send"}
             </button>
-            <button className="btn btn-outline" onClick={() => setDraft("")}>
+            <button type="button" className="btn btn-outline" onClick={() => setDraft("")} disabled={busy !== ""}>
               Discard draft
             </button>
             {provider && providerTag(provider, fallback)}
@@ -266,23 +333,40 @@ function DraftPanel({ onQueued }: { onQueued: () => void }) {
 }
 
 // Approvals: every outbound message sits PENDING until a human approves.
-function ApprovalsPanel() {
+function ApprovalsPanel({ revision }: { revision: number }) {
   const [items, setItems] = useState<Proposal[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState("");
+  const [deciding, setDeciding] = useState<null | { id: string; action: "confirm" | "decline" }>(null);
 
   const load = useCallback(async () => {
-    const res = await client.get("/assistant/messages");
-    setItems(res.data);
-    setLoaded(true);
+    try {
+      const res = await client.get("/assistant/messages");
+      setItems(res.data);
+      setError("");
+    } catch (err) {
+      setError(apiMessage(err, "Could not load the approval queue."));
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, revision]);
 
   async function decide(id: string, action: "confirm" | "decline") {
-    await client.post(`/assistant/messages/${id}/${action}`);
-    load();
+    if (deciding) return;
+    setDeciding({ id, action });
+    setError("");
+    try {
+      await client.post(`/assistant/messages/${id}/${action}`);
+      await load();
+    } catch (err) {
+      setError(apiMessage(err, "Could not record that decision."));
+    } finally {
+      setDeciding(null);
+    }
   }
 
   const pending = items.filter((p) => p.status === "PENDING");
@@ -290,19 +374,28 @@ function ApprovalsPanel() {
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>Approvals queue</h3>
+      <h2 className="card-title">Approvals</h2>
       <p className="card-intro">
         Nothing is sent until approved here. Handoff proposals are created
         automatically when a dependency unblocks.
       </p>
 
-      {!loaded && <p className="muted m-0">Loading...</p>}
+      {!loaded && !error ? <LoadingState label="Loading approvals…" /> : null}
+      {error ? (
+        <div className="notice notice-danger" role="alert">
+          <p className="m-0">{error}</p>
+          <button type="button" className="btn btn-outline btn-sm mt-2" onClick={() => load()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
 
-      {loaded && pending.length === 0 && (
-        <p className="muted m-0">
-          Nothing waiting for approval.
-        </p>
-      )}
+      {loaded && !error && pending.length === 0 ? (
+        <div className="assistant-empty">
+          <h3>Nothing waiting</h3>
+          <p>No message or handoff needs your approval.</p>
+        </div>
+      ) : null}
 
       {pending.map((p) => (
         <div key={p._id} className="card card-inset card-accent">
@@ -313,14 +406,21 @@ function ApprovalsPanel() {
           </p>
           <p className="answer-text mb-4 mt-2">{p.body}</p>
           <div className="form-actions mt-0">
-            <button className="btn" onClick={() => decide(p._id, "confirm")}>
-              Approve send
+            <button
+              type="button"
+              className="btn"
+              disabled={deciding?.id === p._id}
+              onClick={() => decide(p._id, "confirm")}
+            >
+              {deciding?.id === p._id && deciding.action === "confirm" ? "Saving…" : "Approve send"}
             </button>
             <button
+              type="button"
               className="btn btn-outline"
+              disabled={deciding?.id === p._id}
               onClick={() => decide(p._id, "decline")}
             >
-              Decline
+              {deciding?.id === p._id && deciding.action === "decline" ? "Saving…" : "Decline"}
             </button>
           </div>
         </div>
@@ -360,18 +460,22 @@ function ApprovalsPanel() {
 }
 
 export default function Assistant() {
+  const [approvalRevision, setApprovalRevision] = useState(0);
+
   return (
-    <div>
-      <div className="page-head">
-        <h2 className="page-title">Assistant</h2>
+    <div className="assistant-workspace">
+      <PageHeader
+        title="Assistant"
+        description="Ask about your own work, draft a message, and approve anything before it is sent."
+      />
+      <div className="assistant-panes">
+        <AssistantChat />
+        <ContextPanel />
       </div>
-      <p className="page-sub">
-        Your co-worker for tasks and handoffs. It proposes — you confirm.
-      </p>
-      <NextUpPanel />
-      <AskPanel />
-      <DraftPanel onQueued={() => window.location.reload()} />
-      <ApprovalsPanel />
+      <div className="assistant-tools">
+        <DraftPanel onQueued={() => setApprovalRevision((value) => value + 1)} />
+        <ApprovalsPanel revision={approvalRevision} />
+      </div>
     </div>
   );
 }

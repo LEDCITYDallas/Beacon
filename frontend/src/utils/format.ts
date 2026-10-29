@@ -11,6 +11,9 @@ export type ApiUser = {
   role: "SUPER_ADMIN" | "MANAGER" | "EMPLOYEE";
   department: string;
   consentAccepted: boolean;
+  consentVersion?: string;
+  requiredConsentVersion?: string;
+  consentCurrent?: boolean;
   timezone: string;
 };
 

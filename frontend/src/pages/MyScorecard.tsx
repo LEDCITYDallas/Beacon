@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { formatDate } from "../utils/format";
+import PageHeader from "../components/PageHeader";
+import LoadingState from "../components/LoadingState";
 
 // ---------------------------------------------------------------------
 // Employee weekly + monthly scorecard (Priority 4 / Section 7).
@@ -91,16 +93,19 @@ export default function MyScorecard() {
       .catch(() => setError("Could not load your scorecard."));
   }, []);
 
-  if (error) return <p className="notice notice-danger">{error}</p>;
-  if (!report) return <p className="muted">Loading your scorecard…</p>;
+  if (error) return <p className="notice notice-danger state-message">{error}</p>;
+  if (!report) return <LoadingState label="Loading your scorecard…" />;
 
   return (
     <div>
-      <h2 className="page-title">My scorecard</h2>
-      <p className="page-sub">
-        Your own numbers, in your timezone ({user?.timezone}). Ask your manager for a walkthrough at
-        any time.
-      </p>
+      <PageHeader
+        title="My scorecard"
+        description={
+          report.week.isLive
+            ? `Your own numbers, in your timezone (${user?.timezone}).`
+            : `Draft view, not an official performance score. Timezone: ${user?.timezone}.`
+        }
+      />
 
       <PeriodCard period={report.week} />
       <PeriodCard period={report.month} />
@@ -164,9 +169,12 @@ function PeriodCard({ period }: { period: Period }) {
     <div className="card">
       <div className="row-between baseline">
         <h3 className="m-0 capitalize">{period.period}</h3>
-        <div className="stat-value">
-          {period.score.value === null ? "—" : period.score.value}
-          <span className="stat-unit"> / 100</span>
+        <div>
+          {!period.isLive && <div className="text-micro muted">Draft score</div>}
+          <div className="stat-value">
+            {period.score.value === null ? "—" : period.score.value}
+            <span className="stat-unit"> / 100</span>
+          </div>
         </div>
       </div>
       <p className="card-intro mt-2 mb-4">

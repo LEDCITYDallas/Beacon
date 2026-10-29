@@ -10,6 +10,9 @@ interface AuthUser {
   role: Role;
   department: string;
   consentAccepted: boolean;
+  consentVersion?: string;
+  requiredConsentVersion?: string;
+  consentCurrent?: boolean;
   timezone: string;
 }
 
@@ -19,6 +22,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   acceptConsent: () => Promise<void>;
+  withdrawConsent: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -36,7 +40,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     client
       .get("/auth/me")
       .then((res) => setUser(res.data.user))
-      .catch(() => localStorage.removeItem("token"))
+      .catch((err) => {
+        if (err.response?.data?.code !== "CONSENT_REQUIRED") {
+          localStorage.removeItem("token");
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -52,12 +60,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function acceptConsent() {
-    await client.post("/auth/consent", {});
-    if (user) setUser({ ...user, consentAccepted: true });
+    const res = await client.post("/auth/consent", {});
+    setUser(res.data.user);
+  }
+
+  async function withdrawConsent() {
+    await client.post("/auth/consent/withdraw", {});
+    logout();
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, acceptConsent }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, acceptConsent, withdrawConsent }}>
       {children}
     </AuthContext.Provider>
   );

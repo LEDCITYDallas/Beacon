@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import client from "../api/client";
+import PageHeader from "../components/PageHeader";
+import StaffAdmin from "../components/StaffAdmin";
+import LoadingState from "../components/LoadingState";
 
 // ---------------------------------------------------------------------
 // Super Admin settings (Priorities 1, 3, 5, 6, 8, 9, 10).
@@ -221,18 +224,21 @@ export default function AdminSettings() {
     }
   }
 
-  if (error && !status) return <p className="notice notice-danger">{error}</p>;
-  if (!status) return <p className="muted">Loading…</p>;
+  if (error && !status) return <p className="notice notice-danger state-message">{error}</p>;
+  if (!status) return <LoadingState label="Loading administration…" />;
   return (
     <div>
-      <h2 className="page-title">Administration</h2>
-      <p className="page-sub">
-        {status.environment.productionTarget} · env {status.environment.nodeEnv}
-        {status.environment.mockMode ? " · mock mode" : " · live mode"}
-      </p>
+      <PageHeader
+        title="Administration"
+        description={`${status.environment.productionTarget} · env ${status.environment.nodeEnv}${
+          status.environment.mockMode ? " · mock mode" : " · live mode"
+        }`}
+      />
 
       {error && <p className="notice notice-danger">{error}</p>}
       {notice && <p className="notice notice-success">{notice}</p>}
+
+      <StaffAdmin />
 
       <div className="card">
         <h3 className="card-title">AI assistant &amp; cost</h3>
@@ -300,8 +306,10 @@ export default function AdminSettings() {
       <div className="card">
         <h3 className="card-title">Scorecard weights (joint decision with Omair)</h3>
         <p className="card-intro">
-          activityIdlePct is hard-capped at 10 and can never be the dominant factor. Reports stay in
-          draft mode while isLive is false.
+          The numbers below are unapproved defaults, not an agreed formula. activityIdlePct cannot be
+          set above 10, and a score is withheld when activity would be the only or dominant input.
+          Reports stay labelled as a draft while isLive is false. Turning isLive on removes that
+          label, so leave it off until the company approves the formula.
         </p>
         <div className="field-row">
           {Object.keys(weights).map((k) => (
@@ -366,16 +374,19 @@ export default function AdminSettings() {
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Retention (client decision outstanding)</h3>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <h3 className="card-title">Retention (client decision outstanding)</h3>
+        <p className="card-intro">
           Leave a field blank/0 to mean "not decided" — the cleanup job then skips that data type
           entirely instead of guessing a period.
         </p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="field-row">
           {Object.keys(RETENTION_LABELS).map((k) => (
-            <div key={k} style={{ minWidth: 180 }}>
-              <label style={{ marginTop: 0 }}>{RETENTION_LABELS[k]} (days)</label>
+            <div key={k} className="field">
+              <label className="m-0" htmlFor={`retention-${k}`}>
+                {RETENTION_LABELS[k]} (days)
+              </label>
               <input
+                id={`retention-${k}`}
                 type="number"
                 min={1}
                 value={retention[k] === null || retention[k] === undefined ? "" : retention[k]}
@@ -387,31 +398,31 @@ export default function AdminSettings() {
             </div>
           ))}
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <label className="choice mt-3">
           <input
             type="checkbox"
-            style={{ width: "auto" }}
             checked={retentionEnabled}
             onChange={(e) => setRetentionEnabled(e.target.checked)}
           />
-          <span style={{ fontSize: 13 }}>Enable the cleanup job (npm run retention -- --apply)</span>
+          <span>Enable the cleanup job (npm run retention -- --apply)</span>
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <label className="choice">
           <input
             type="checkbox"
-            style={{ width: "auto" }}
             checked={retentionApproved}
             onChange={(e) => setRetentionApproved(e.target.checked)}
           />
-          <span style={{ fontSize: 13 }}>Omair has approved these periods</span>
+          <span>Omair has approved these periods</span>
         </label>
-        <button className="btn" style={{ marginTop: 12 }} onClick={() => void saveRetention()}>
-          Save retention
-        </button>
+        <div className="form-actions">
+          <button className="btn" onClick={() => void saveRetention()}>
+            Save retention
+          </button>
+        </div>
       </div>
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Integrations (Zoho / WorkDrive / CMS)</h3>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <h3 className="card-title">Integrations (Zoho / WorkDrive / CMS)</h3>
+        <p className="card-intro">
           Driver: <strong>{status.integrations.driver}</strong>. In mock mode each source reads labelled
           mock data, so the detect → propose → human-confirm flow is fully testable before Omair wires
           the OAuth tokens.
@@ -429,35 +440,35 @@ export default function AdminSettings() {
             {status.integrations.sources.map((s) => (
               <tr key={s.key}>
                 <td>{s.label}</td>
-                <td style={{ color: s.configured ? "var(--success)" : "var(--warning)" }}>
+                <td className={s.configured ? "text-success" : "text-warning"}>
                   {s.configured ? "yes" : "needs OAuth"}
                 </td>
-                <td style={{ fontSize: 12 }}>{s.evidenceKind}</td>
-                <td style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  {s.requiredScopes.join(", ")}
-                </td>
+                <td className="cell-small">{s.evidenceKind}</td>
+                <td className="cell-micro">{s.requiredScopes.join(", ")}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <button className="btn" style={{ marginTop: 12 }} onClick={() => void runScan()}>
-          Run completion scan now
-        </button>
-        {scanResult && <p style={{ fontSize: 13, color: "var(--accent-light)" }}>{scanResult}</p>}
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <div className="form-actions">
+          <button className="btn" onClick={() => void runScan()}>
+            Run completion scan now
+          </button>
+        </div>
+        {scanResult && <p className="text-sm text-accent">{scanResult}</p>}
+        <p className="text-xs muted">
           A signal only ever raises a proposal. The assignee confirms it, and the evidence (source,
           external id, link) is stored on the task so a reviewer can see why.
         </p>
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Friday digest</h3>
-        <p style={{ fontSize: 13 }}>
+        <h3 className="card-title">Friday digest</h3>
+        <p className="text-sm mt-0">
           Next scheduled run:{" "}
           <strong>{digestSchedule ? digestSchedule.nextRunLocal : "—"}</strong> ({status.notifications.digest.timezone}) ·
           delivery {status.notifications.digest.sendEnabled ? "enabled" : "not enabled yet"}
         </p>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <p className="text-xs muted">
           WhatsApp live: {String(status.notifications.whatsapp.live)} · Omair's number configured:{" "}
           {String(status.notifications.whatsapp.omairNumberSet)} · email transport:{" "}
           {status.notifications.email.transport} ({status.notifications.email.live ? "live" : "simulated"})
@@ -465,21 +476,21 @@ export default function AdminSettings() {
         <button className="btn" onClick={() => void sendDigest()}>
           Generate & send digest now
         </button>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <p className="text-xs muted">
           Sending is explicit and logged. With the mock driver the message is recorded as SIMULATED —
           no WhatsApp message leaves the machine until Omair wires the Cloud API credentials.
         </p>
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Monitoring scope (fixed)</h3>
-        <p style={{ fontSize: 13 }}>
+        <h3 className="card-title">Monitoring scope (fixed)</h3>
+        <p className="text-sm mt-0">
           Idle window: <strong>{status.activity.idleThresholdMinutes} minutes</strong> · heartbeat{" "}
           {status.activity.heartbeatSeconds}s · frames stored:{" "}
           <strong>{String(status.liveView.framesStored)}</strong> · screenshots:{" "}
           <strong>{String(status.liveView.screenshotsEnabled)}</strong>
         </p>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <p className="text-xs muted mb-0">
           Keystrokes collected: {String(status.activity.collectKeystrokes)} · screen content:{" "}
           {String(status.activity.collectScreenContent)} · webcam: {String(status.activity.collectWebcam)} ·
           audio: {String(status.activity.collectAudio)} — these are prohibited and the API rejects any
@@ -488,7 +499,7 @@ export default function AdminSettings() {
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Audit log (recent)</h3>
+        <h3 className="card-title">Audit log (recent)</h3>
         <table>
           <thead>
             <tr>
@@ -506,17 +517,15 @@ export default function AdminSettings() {
                 <td>{a.action}</td>
                 <td>
                   {a.actorName}
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}> {a.actorRole}</span>
+                  <span className="cell-micro"> {a.actorRole}</span>
                 </td>
-                <td style={{ fontSize: 12 }}>{a.targetType}</td>
-                <td style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  {JSON.stringify(a.meta).slice(0, 120)}
-                </td>
+                <td className="cell-small">{a.targetType}</td>
+                <td className="cell-micro">{JSON.stringify(a.meta).slice(0, 120)}</td>
               </tr>
             ))}
             {audit.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                <td colSpan={5} className="cell-empty">
                   No audit entries yet.
                 </td>
               </tr>

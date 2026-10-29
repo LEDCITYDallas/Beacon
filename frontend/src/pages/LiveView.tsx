@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { formatDateTime, formatDuration } from "../utils/format";
+import PageHeader from "../components/PageHeader";
 
 // ---------------------------------------------------------------------
 // Live screen view - admin side (Priority 3 / Section 6).
@@ -69,6 +70,7 @@ export default function LiveView() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [watching, setWatching] = useState<string | null>(null);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
   const [frame, setFrame] = useState("");
   const [frameSeq, setFrameSeq] = useState<number | null>(null);
   const streamAbort = useRef<AbortController | null>(null);
@@ -98,6 +100,8 @@ export default function LiveView() {
   }, [load]);
 
   async function request(employeeId: string, name: string) {
+    if (requestingId) return;
+    setRequestingId(employeeId);
     setError("");
     setNotice("");
     try {
@@ -107,6 +111,8 @@ export default function LiveView() {
       await load();
     } catch (err: any) {
       setError(err.response?.data?.message || "Could not create the request");
+    } finally {
+      setRequestingId(null);
     }
   }
 
@@ -114,9 +120,15 @@ export default function LiveView() {
     streamAbort.current?.abort();
     setWatching(null);
     setFrame("");
-    await client.post(`/liveview/sessions/${sessionId}/end`, { reason: "ended by viewer" });
-    setNotice("Live view ended. No frame or recording was stored.");
-    await load();
+    setError("");
+    try {
+      await client.post(`/liveview/sessions/${sessionId}/end`, { reason: "ended by viewer" });
+      setNotice("Live view ended. No frame or recording was stored.");
+      await load();
+    } catch (err: any) {
+      setNotice("");
+      setError(err.response?.data?.message || "Could not end the live view.");
+    }
   }
 
   // Reads the SSE stream with a normal fetch so the Authorization header is
@@ -173,67 +185,50 @@ export default function LiveView() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>Live screen view</h2>
-      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
-        View-only, session-logged, and never recorded. Role scope is configurable pending the client
-        decision (Section 12).
-      </p>
+      <PageHeader
+        title="Live screen view"
+        description="View-only, session-logged, and never recorded. Role scope is configurable pending the client decision (Section 12)."
+      />
 
       {config && (
-        <div className="card" style={{ background: "var(--surface-2)" }}>
-          <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
+        <div className="card card-muted">
+          <p className="text-xs muted mb-0">
             Allowed roles: <strong>{config.allowedRoles.join(", ")}</strong> · reduced monitoring
             excluded: <strong>{String(config.excludeReducedMonitoring)}</strong> · employee approval
             required: <strong>{String(config.requireEmployeeApproval)}</strong> · screenshots:{" "}
             <strong>{config.screenshotsEnabled ? "ON" : "off for every role"}</strong>
           </p>
-          <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+          <p className="text-micro muted mt-2 mb-0">
             {config.storage.note} Frames are discarded after {config.storage.frameTtlSeconds}s even
             while you watch.
           </p>
           {!config.canRequest && (
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--warning)" }}>
-              {config.canRequestReason}
-            </p>
+            <p className="text-xs text-warning mt-2 mb-0">{config.canRequestReason}</p>
           )}
         </div>
       )}
 
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-      {notice && <p style={{ color: "var(--success)" }}>{notice}</p>}
+      {error && <p className="notice notice-danger" role="alert">{error}</p>}
+      {notice && <p className="notice notice-success" role="status">{notice}</p>}
       {watching && (
-        <div className="card" style={{ border: "1px solid var(--danger)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ margin: 0 }}>
+        <div className="card card-live">
+          <div className="card-head">
+            <h3 className="card-title mb-0">
               Watching live
-              {frameSeq !== null && (
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}> — frame #{frameSeq}</span>
-              )}
+              {frameSeq !== null && <span className="text-micro muted"> — frame #{frameSeq}</span>}
             </h3>
             <button className="btn btn-danger" onClick={() => void end(watching)}>
               End live view
             </button>
           </div>
-          <div
-            style={{
-              marginTop: 12,
-              background: "#000",
-              borderRadius: 8,
-              minHeight: 240,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
+          <div className="live-stage">
             {frame ? (
-              <img src={frame} alt="live view" style={{ maxWidth: "100%", borderRadius: 8 }} />
+              <img src={frame} alt="Live view frame" />
             ) : (
-              <p style={{ color: "var(--text-muted)" }}>
-                Waiting for the employee to start sharing…
-              </p>
+              <p>Waiting for the employee to start sharing…</p>
             )}
           </div>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 0 }}>
+          <p className="text-micro muted mb-0 mt-3">
             This stream is not being recorded. Closing this view or ending the session discards the
             frames.
           </p>
@@ -242,7 +237,7 @@ export default function LiveView() {
 
       {sessions.length > 0 && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>My recent sessions</h3>
+          <h3 className="card-title">My recent sessions</h3>
           <table>
             <thead>
               <tr>
@@ -265,8 +260,7 @@ export default function LiveView() {
                   <td>
                     {s.status === "ACTIVE" && (
                       <button
-                        className="btn btn-outline"
-                        style={{ padding: "4px 10px", fontSize: 12 }}
+                        className="btn btn-outline btn-sm"
                         onClick={() => void watch(s.id)}
                       >
                         Watch
@@ -281,14 +275,14 @@ export default function LiveView() {
       )}
       {targets.length > 0 && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Employees you may view</h3>
+          <h3 className="card-title">Employees you may view</h3>
           <label>Reason shown to the employee (optional)</label>
           <input
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. checking a display configuration with the customer waiting"
           />
-          <table style={{ marginTop: 12 }}>
+          <table className="mt-3">
             <thead>
               <tr>
                 <th>Name</th>
@@ -304,30 +298,21 @@ export default function LiveView() {
                   <td>
                     {t.name}
                     {t.reducedMonitoring && (
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {" "}
-                        (reduced monitoring)
-                      </span>
+                      <span className="text-micro muted"> (reduced monitoring)</span>
                     )}
                   </td>
                   <td>{t.department}</td>
                   <td>{t.status === "ACTIVE" ? "Active" : "On break / inactive"}</td>
-                  <td
-                    style={{
-                      fontSize: 12,
-                      color: t.canBeViewed ? "var(--success)" : "var(--warning)",
-                    }}
-                  >
+                  <td className={t.canBeViewed ? "text-success text-xs" : "text-warning text-xs"}>
                     {t.canBeViewed ? "yes" : t.reason}
                   </td>
                   <td>
                     <button
-                      className="btn btn-outline"
-                      style={{ padding: "4px 10px", fontSize: 12 }}
-                      disabled={!t.canBeViewed}
+                      className="btn btn-outline btn-sm"
+                      disabled={!t.canBeViewed || requestingId === t.userId}
                       onClick={() => void request(t.userId, t.name)}
                     >
-                      Request view
+                      {requestingId === t.userId ? "Requesting…" : "Request view"}
                     </button>
                   </td>
                 </tr>
@@ -339,8 +324,8 @@ export default function LiveView() {
 
       {config?.canViewLogs && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Session log (Super Admin only)</h3>
-          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          <h3 className="card-title">Session log (Super Admin only)</h3>
+          <p className="card-intro">
             Who was viewed, by whom, when, and for how long. Session records only — no frame,
             thumbnail or recording exists anywhere in this system.
           </p>
@@ -363,12 +348,12 @@ export default function LiveView() {
                   <td>{s.status}</td>
                   <td>{s.startedAt ? formatDateTime(s.startedAt, user.timezone) : "—"}</td>
                   <td>{s.durationLabel || formatDuration(s.durationSeconds)}</td>
-                  <td style={{ fontSize: 12, color: "var(--text-muted)" }}>{s.endReason || "—"}</td>
+                  <td className="text-xs muted">{s.endReason || "—"}</td>
                 </tr>
               ))}
               {logs.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                  <td colSpan={6} className="cell-empty">
                     No live-view sessions recorded yet.
                   </td>
                 </tr>

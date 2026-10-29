@@ -18,7 +18,7 @@ export default function LiveViewPrompt() {
     <div className="card card-inset card-warn">
       {pending && (
         <>
-          <h3 className="card-title" style={{ color: "var(--warning-ink)" }}>
+          <h3 className="card-title prompt-title-warning">
             Screen view request from {pending.viewerName}
           </h3>
           <p className="card-intro">
@@ -43,7 +43,7 @@ export default function LiveViewPrompt() {
 
       {active && (
         <>
-          <h3 className="card-title" style={{ color: sharing ? "var(--danger-ink)" : "var(--warning-ink)" }}>
+          <h3 className={`card-title ${sharing ? "prompt-title-danger" : "prompt-title-warning"}`}>
             {sharing ? `Sharing your screen with ${active.viewerName}` : `Live view ready — ${active.viewerName}`}
           </h3>
           <p className="card-intro">

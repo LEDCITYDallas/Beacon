@@ -1,6 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import client from "../api/client";
+import { notify } from "./Toaster";
 import { Task } from "../types";
+
+function messageOf(err: unknown, fallback: string) {
+  const data = (err as { response?: { data?: { message?: string } } })?.response?.data;
+  return data?.message || fallback;
+}
 
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -21,6 +27,8 @@ export default function TaskTimer({
 }) {
   const [base, setBase] = useState(baseSeconds);
   const [tick, setTick] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const running = task.status === "IN_PROGRESS";
 
   useEffect(() => {
@@ -35,23 +43,26 @@ export default function TaskTimer({
     return () => clearInterval(id);
   }, [running, task._id]);
 
-  async function start() {
-    const res = await client.post(`/tasks/${task._id}/start`);
-    setBase(res.data.actualSeconds ?? base);
-    setTick(0);
-    onChange(res.data.task);
-  }
-
-  async function pause() {
-    const res = await client.post(`/tasks/${task._id}/pause`);
-    setBase(res.data.actualSeconds ?? base);
-    setTick(0);
-    onChange(res.data.task);
-  }
-
-  async function complete() {
-    const res = await client.post(`/tasks/${task._id}/complete`);
-    onChange(res.data);
+  async function run(action: "start" | "pause" | "complete", success: string) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const res = await client.post(`/tasks/${task._id}/${action}`);
+      if (action !== "complete") {
+        setBase(res.data.actualSeconds ?? base);
+        setTick(0);
+        onChange(res.data.task);
+      } else {
+        onChange(res.data);
+      }
+      notify("success", success);
+    } catch (err) {
+      notify("error", messageOf(err, "That task action did not save. Try again."));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   }
 
   return (
@@ -59,18 +70,18 @@ export default function TaskTimer({
       <div className="timer-display">{formatDuration(base + tick)}</div>
       <div className="row">
         {!running && task.status !== "COMPLETED" && (
-          <button className="btn" onClick={start}>
-            {task.status === "PAUSED" ? "Resume" : "Start"}
+          <button className="btn" disabled={busy} onClick={() => run("start", task.status === "PAUSED" ? "Timer resumed." : "Timer started.")}>
+            {busy ? "Saving…" : task.status === "PAUSED" ? "Resume" : "Start"}
           </button>
         )}
         {running && (
-          <button className="btn btn-outline" onClick={pause}>
-            Pause
+          <button className="btn btn-outline" disabled={busy} onClick={() => run("pause", "Timer paused.")}>
+            {busy ? "Saving…" : "Pause"}
           </button>
         )}
         {task.status !== "COMPLETED" && (
-          <button className="btn btn-outline" onClick={complete}>
-            Mark done
+          <button className="btn btn-outline" disabled={busy} onClick={() => run("complete", "Task marked done.")}>
+            {busy ? "Saving…" : "Mark done"}
           </button>
         )}
       </div>

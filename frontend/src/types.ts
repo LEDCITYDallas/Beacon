@@ -32,4 +32,14 @@ export interface Task {
   flagged?: boolean;
   flagNote?: string;
   reopenCount?: number;
+  timeline?: TimelineEvent[];
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string | null;
+}
+
+export interface TimelineEvent {
+  event: string;
+  timestamp: string;
+  actor?: string | null;
 }

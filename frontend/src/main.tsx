@@ -3,6 +3,8 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
+import Toaster from "./components/Toaster";
+import ConfirmDialog from "./components/ConfirmDialog";
 import "./styles/theme.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -10,6 +12,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <AuthProvider>
         <App />
+        <Toaster />
+        <ConfirmDialog />
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>

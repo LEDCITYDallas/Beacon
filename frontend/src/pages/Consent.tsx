@@ -1,15 +1,40 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import LoadingState from "../components/LoadingState";
+import { BrandGlyph, BrandWordmark } from "../components/Brand";
+
+interface ConsentSection {
+  heading: string;
+  body: string;
+}
+
+interface ConsentDocument {
+  version: string;
+  legallyApproved: boolean;
+  status: string;
+  title: string;
+  sections: ConsentSection[];
+}
 
 export default function Consent() {
-  const { acceptConsent, logout } = useAuth();
+  const { acceptConsent, logout, user } = useAuth();
   const navigate = useNavigate();
+  const [doc, setDoc] = useState<ConsentDocument | null>(null);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    client
+      .get("/auth/consent")
+      .then((res) => setDoc(res.data))
+      .catch(() => setError("Could not load the consent notice. You cannot accept it until it loads."));
+  }, []);
+
   async function handleAccept() {
+    if (!doc || doc.legallyApproved !== false) return;
     setBusy(true);
     setError("");
     try {
@@ -25,36 +50,40 @@ export default function Consent() {
   return (
     <div className="auth-shell">
       <div className="card auth-card auth-card-wide">
-        <h2 className="page-title">Before you get started</h2>
+        <div className="auth-brand">
+          <BrandGlyph size={52} />
+          <BrandWordmark />
+        </div>
+        <h2 className="page-title">{doc?.title || "Before you get started"}</h2>
+        {doc && (
+          <p className="notice notice-warning mt-4">
+            {doc.status} Version {doc.version}.
+          </p>
+        )}
 
-        <p className="legal mt-4">
-          This app is your assistant for what to do next — it tracks your
-          tasks, tells you when a dependency is ready for you, and can draft
-          routine replies for you to review and send.
-        </p>
+        {doc?.sections.map((section) => (
+          <section key={section.heading} className="mt-4">
+            <h3 className="card-title">{section.heading}</h3>
+            <p className="legal mt-2 mb-0">{section.body}</p>
+          </section>
+        ))}
 
-        <p className="legal mt-3">
-          As part of using this system, please also note: your activity
-          (such as idle/active status) may be tracked while you use it, and
-          administrators may perform screen checks, including random spot
-          checks, as part of standard account administration. Full details
-          are in the company's monitoring policy.
-        </p>
+        {!doc && !error && <LoadingState label="Loading the notice…" />}
 
         <label className="choice choice-top">
           <input
             type="checkbox"
             checked={checked}
+            disabled={!doc}
             onChange={(e) => setChecked(e.target.checked)}
           />
-          <span>I have read and understood the above, and I accept.</span>
+          <span>
+            I have read draft {doc?.version || ""} and I accept it so I can use the system. I understand it
+            is not a legally approved policy.
+          </span>
         </label>
 
-        <button
-          className="btn btn-block mt-4"
-          disabled={!checked || busy}
-          onClick={handleAccept}
-        >
+        <button className="btn btn-block mt-4" disabled={!checked || !doc || busy} onClick={handleAccept}>
           {busy ? "Saving..." : "Accept & continue"}
         </button>
 
@@ -67,7 +96,7 @@ export default function Consent() {
             navigate("/login");
           }}
         >
-          Decline & sign out
+          {user?.consentAccepted ? "Sign out without accepting this version" : "Decline & sign out"}
         </button>
       </div>
     </div>

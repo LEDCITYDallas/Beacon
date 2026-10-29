@@ -3,6 +3,8 @@ import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { formatDate, formatDayShort } from "../utils/format";
 import Avatar from "../components/Avatar";
+import PageHeader from "../components/PageHeader";
+import LoadingState from "../components/LoadingState";
 
 // ---------------------------------------------------------------------
 // Manager / Super Admin scorecard (Priority 4 / Section 7).
@@ -126,16 +128,19 @@ export default function TeamScorecard() {
     }
   }
 
-  if (error && !report) return <p className="notice notice-danger">{error}</p>;
-  if (!report) return <p className="muted">Loading team scorecard…</p>;
+  if (error && !report) return <p className="notice notice-danger state-message">{error}</p>;
+  if (!report) return <LoadingState label="Loading team scorecard…" />;
 
   return (
     <div>
-      <h2 className="page-title">Team scorecard</h2>
-      <p className="page-sub">
-        {report.department === "all" ? "All departments" : report.department} · week boundaries use each
-        person's own timezone.
-      </p>
+      <PageHeader
+        title="Team scorecard"
+        description={
+          report.isLive
+            ? `${report.department === "all" ? "All departments" : report.department} · week boundaries use each person's own timezone.`
+            : `${report.department === "all" ? "All departments" : report.department} · draft view, not an official performance score.`
+        }
+      />
 
       {report.banner && (
         <div className="card card-warn">
@@ -153,7 +158,7 @@ export default function TeamScorecard() {
           <thead>
             <tr>
               <th>Employee</th>
-              <th>Week score</th>
+              <th>{report.isLive ? "Week score" : "Draft week score"}</th>
               <th>Tasks</th>
               <th>On time</th>
               <th>Est. accuracy</th>
@@ -247,13 +252,13 @@ export default function TeamScorecard() {
                 <td>{r.employee?.name || "—"}</td>
                 <td>{formatDate(r.weekStart, user?.timezone)}</td>
                 <td>{r.score}/5</td>
-                <td style={{ fontSize: 12, color: "var(--text-muted)" }}>{r.note || "—"}</td>
-                <td style={{ fontSize: 12 }}>{r.ratedBy}</td>
+                <td className="cell-small cell-muted">{r.note || "—"}</td>
+                <td className="cell-small">{r.ratedBy}</td>
               </tr>
             ))}
             {ratings.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                <td colSpan={5} className="cell-empty">
                   No ratings recorded yet.
                 </td>
               </tr>
@@ -264,13 +269,15 @@ export default function TeamScorecard() {
 
       {user?.role === "SUPER_ADMIN" && departments.length > 0 && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Department roll-up (Super Admin)</h3>
+          <h3 className="card-title">
+            {report.isLive ? "Department roll-up (Super Admin)" : "Draft department roll-up (Super Admin)"}
+          </h3>
           <table>
             <thead>
               <tr>
                 <th>Department</th>
                 <th>People</th>
-                <th>Average score</th>
+                <th>{report.isLive ? "Average score" : "Draft average"}</th>
                 <th>Tasks this week</th>
                 <th>Average on-time</th>
               </tr>
