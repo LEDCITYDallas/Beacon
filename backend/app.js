@@ -31,6 +31,16 @@ const adminRoutes = require("./routes/adminRoutes");
 const userRoutes = require("./routes/userRoutes");
 const integrationRoutes = require("./routes/integrationRoutes");
 const config = require("./config/env");
+const { redactSecrets } = require("./utils/redact");
+
+const productionProblems = config.productionProblems();
+if (productionProblems.length) {
+  console.error("[startup] Refusing to start in production:\n- " + productionProblems.join("\n- "));
+  process.exit(1);
+}
+for (const warning of config.productionWarnings()) {
+  console.error("[startup] " + warning);
+}
 
 const app = express();
 
@@ -90,9 +100,6 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     service: "led-city-workforce-backend",
-    phase: "1-6",
-    mockMode: config.mockMode,
-    aiProvider: config.ai.provider,
   });
 });
 
@@ -114,7 +121,7 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error("[error]", redactSecrets(err && (err.stack || err.message || err)));
   const isProd = process.env.NODE_ENV === "production";
 
   // Mongoose cast/validation errors are client mistakes -> 400, not 500.

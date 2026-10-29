@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const consent = require("../constants/consent");
 
 async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
@@ -17,11 +18,17 @@ async function requireAuth(req, res, next) {
       return res.status(401).json({ message: "Invalid or inactive user" });
     }
 
-    // Section 9: consent gate is a hard system requirement, not just
-    // policy text. Block every route except the consent endpoint itself
-    // until the employee has accepted.
-    const isConsentRoute = req.originalUrl.includes("/consent");
-    if (!user.consentAccepted && !isConsentRoute) {
+    // The current consent version is required before any work route.
+    // /auth/me, the notice, accept, and withdraw stay available so a refresh
+    // can restore the session and the person can accept or withdraw.
+    // Match the path only: a query string that contains "/consent" must not
+    // bypass the gate.
+    const pathOnly = String(req.originalUrl || "").split("?")[0];
+    const consentExempt =
+      pathOnly === "/api/auth/me" ||
+      pathOnly === "/api/auth/consent" ||
+      pathOnly === "/api/auth/consent/withdraw";
+    if (!consent.current(user) && !consentExempt) {
       return res.status(403).json({
         message: "Consent required before using the system",
         code: "CONSENT_REQUIRED",
@@ -58,14 +65,11 @@ function scopeToDepartment(req, res, next) {
   next();
 }
 
-// The live-view SSE stream is consumed by a browser fetch stream, which can send
-// the Authorization header. This variant ALSO accepts ?token= so curl / a native
-// monitoring client can subscribe during testing. It is used for that one route
-// only, so tokens stay out of URLs everywhere else.
+// Live-view SSE uses the same Authorization header as every other route.
+// A JWT in ?token= is ignored. Query tokens leak through access logs, browser
+// history, and Referer headers, so this route must not copy one onto the
+// request. Callers that only send ?token= get 401 from requireAuth.
 async function requireAuthStream(req, res, next) {
-  if (!req.headers.authorization && req.query && req.query.token) {
-    req.headers.authorization = `Bearer ${String(req.query.token)}`;
-  }
   return requireAuth(req, res, next);
 }
 

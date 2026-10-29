@@ -43,15 +43,18 @@ const isProduction = nodeEnv === "production";
 // Verify against the provider's pricing page at purchase time.
 const AI_DEFAULT_MODELS = {
   mock: "mock-v1",
-  openai: "gpt-4o-mini",
-  gemini: "gemini-1.5-flash",
+  openai: "gpt-5-mini",
+  gemini: "gemini-3.8-flash",
   anthropic: "claude-3-5-haiku-latest",
 };
 
+// List-price estimates for the Super Admin usage report, not an invoice.
+// Gemini 3.8 Flash introductory rates (through 2026-12-31) and GPT-5 mini
+// published rates. Verify on the provider pricing page before go-live.
 const AI_DEFAULT_COST_PER_MILLION = {
   mock: { input: 0, output: 0 },
-  openai: { input: 0.15, output: 0.6 },
-  gemini: { input: 0.075, output: 0.3 },
+  openai: { input: 0.25, output: 2 },
+  gemini: { input: 0.75, output: 3.75 },
   anthropic: { input: 0.8, output: 4.0 },
 };
 
@@ -86,10 +89,10 @@ const config = {
     maxOutputTokens: intFromEnv("AI_MAX_OUTPUT_TOKENS", 900),
     temperature: floatFromEnv("AI_TEMPERATURE", 0.3),
     dailyCallLimitPerUser: intFromEnv("AI_DAILY_CALL_LIMIT", 200),
+    askRateLimitMax: intFromEnv("AI_ASK_RATE_LIMIT", 40),
     monthlyBudgetUsd: floatFromEnv("AI_MONTHLY_BUDGET_USD", 25),
-    // In development a missing key degrades to the mock provider so the app
-    // stays usable. In production a failure surfaces as an error instead of
-    // silently pretending to be a real assistant.
+    // Temporary outages only. A missing or rejected key never uses this path.
+    // Production defaults to false so an outage is an error, not a mock answer.
     fallbackToMock: boolFromEnv("AI_FALLBACK_TO_MOCK", !isProduction),
     costPerMillion:
       AI_DEFAULT_COST_PER_MILLION[aiProvider] || AI_DEFAULT_COST_PER_MILLION.mock,
@@ -208,5 +211,88 @@ const config = {
     loginRateLimitMax: intFromEnv("LOGIN_RATE_LIMIT_MAX", 10),
   },
 };
+
+// Production matches mongodb-setup: a named user and TLS. Local development
+// keeps an open localhost URI, so this runs only when NODE_ENV=production.
+// The returned text never includes the URI, because the URI contains the password.
+function mongoUriProductionProblems(uri) {
+  let parsed;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return ["MONGO_URI is not a valid database URL. Production requires a username, a password, and tls=true."];
+  }
+  const protocol = parsed.protocol.replace(":", "");
+  if (protocol !== "mongodb" && protocol !== "mongodb+srv") {
+    return ["MONGO_URI must use mongodb:// or mongodb+srv://."];
+  }
+  const problems = [];
+  if (!parsed.username) {
+    problems.push("MONGO_URI has no username. Production requires the workforce_app user.");
+  }
+  if (!parsed.password) {
+    problems.push("MONGO_URI has no password. Production requires the workforce_app password.");
+  }
+  const flag = (name) => {
+    for (const [key, value] of parsed.searchParams.entries()) {
+      if (key.toLowerCase() === name) return String(value).toLowerCase();
+    }
+    return "";
+  };
+  const tlsOn = protocol === "mongodb+srv" || ["true", "1", "yes"].includes(flag("tls") || flag("ssl"));
+  if (!tlsOn) {
+    problems.push("MONGO_URI does not enable TLS. Production requires tls=true.");
+  }
+  return problems;
+}
+
+// Read at call time so a production process cannot keep the development
+// defaults just because the variables were left unset.
+function productionProblems() {
+  if ((process.env.NODE_ENV || "development") !== "production") return [];
+  const problems = [];
+  const mongoUri = String(process.env.MONGO_URI || "").trim();
+  if (!mongoUri) problems.push("MONGO_URI is not set");
+  else problems.push(...mongoUriProductionProblems(mongoUri));
+  if (!String(process.env.FRONTEND_ORIGIN || "").trim()) {
+    problems.push("FRONTEND_ORIGIN is not set");
+  }
+  const provider = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
+  const allowMock = String(process.env.ALLOW_MOCK_AI || "").toLowerCase() === "true";
+  if (!provider || provider === "mock") {
+    if (!allowMock) {
+      problems.push(
+        "AI_PROVIDER is unset or mock. Set gemini, openai, or anthropic, or set ALLOW_MOCK_AI=true for a labelled mock."
+      );
+    }
+  } else if (!["gemini", "openai", "anthropic"].includes(provider)) {
+    problems.push("AI_PROVIDER is not a supported provider");
+  } else if (!String(process.env.AI_API_KEY || "").trim()) {
+    problems.push("AI_API_KEY is not set");
+  }
+  return problems;
+}
+
+function productionWarnings() {
+  if ((process.env.NODE_ENV || "development") !== "production") return [];
+  const warnings = [];
+  const origin = String(process.env.FRONTEND_ORIGIN || "");
+  if (/localhost|127\.0\.0\.1/i.test(origin)) {
+    warnings.push("FRONTEND_ORIGIN is a local address. Setup links will only work on that machine.");
+  }
+  if (boolFromEnv("AI_FALLBACK_TO_MOCK", false)) {
+    warnings.push("AI_FALLBACK_TO_MOCK is on. A provider outage returns a labelled mock answer.");
+  }
+  if ((process.env.NOTIFY_DRIVER || "mock").toLowerCase() !== "live") {
+    warnings.push("NOTIFY_DRIVER is not live. Account links are not emailed.");
+  }
+  if ((process.env.INTEGRATIONS_DRIVER || "mock").toLowerCase() !== "live") {
+    warnings.push("INTEGRATIONS_DRIVER is not live. No vendor system is contacted.");
+  }
+  return warnings;
+}
+
+config.productionProblems = productionProblems;
+config.productionWarnings = productionWarnings;
 
 module.exports = config;

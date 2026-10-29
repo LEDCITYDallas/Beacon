@@ -21,6 +21,9 @@ router.put("/permissions", wrap(adminController.updatePermissions));
 router.get("/audit", wrap(adminController.getAuditLog));
 
 // Priority 10: the staff table the client returns in Section 1.6 is applied here.
+router.get("/users", wrap(adminController.listStaff));
+router.post("/users", wrap(adminController.createUser));
 router.patch("/users/:userId", wrap(adminController.updateUser));
+router.post("/users/:userId/access-link", wrap(adminController.issueAccessLink));
 
 module.exports = router;

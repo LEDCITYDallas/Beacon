@@ -8,15 +8,42 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 
 // Section 7 scorecard - draft until the joint formula approval.
 router.get("/my", wrap(requireAuth), wrap(scorecardController.myReport));
-router.get("/user/:userId", requireRole("SUPER_ADMIN", "MANAGER"), wrap(scorecardController.userReport));
+router.get(
+  "/user/:userId",
+  wrap(requireAuth),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  wrap(scorecardController.userReport)
+);
 
 // Priority 4: the manager department/team view and the Super Admin roll-up.
-router.get("/team", requireRole("SUPER_ADMIN", "MANAGER"), wrap(scorecardController.teamReport));
-router.get("/departments", requireRole("SUPER_ADMIN"), wrap(scorecardController.departmentReport));
+// requireAuth must run before requireRole. requireRole only reads req.user,
+// so without it every caller — including a manager — was rejected.
+router.get(
+  "/team",
+  wrap(requireAuth),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  wrap(scorecardController.teamReport)
+);
+router.get(
+  "/departments",
+  wrap(requireAuth),
+  requireRole("SUPER_ADMIN"),
+  wrap(scorecardController.departmentReport)
+);
 
 // Manager rating entry + history.
-router.post("/rate", requireRole("SUPER_ADMIN", "MANAGER"), wrap(scorecardController.rate));
-router.get("/ratings", requireRole("SUPER_ADMIN", "MANAGER"), wrap(scorecardController.listRatings));
+router.post(
+  "/rate",
+  wrap(requireAuth),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  wrap(scorecardController.rate)
+);
+router.get(
+  "/ratings",
+  wrap(requireAuth),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  wrap(scorecardController.listRatings)
+);
 
 // Weights stay configurable and inactive until isLive is flipped jointly.
 router.get("/settings", wrap(requireAuth), wrap(scorecardController.getSettings));

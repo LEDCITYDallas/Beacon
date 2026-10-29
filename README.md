@@ -7,13 +7,12 @@ pipeline with mock Zoho/WorkDrive/CMS adapters).
 Built against mock data only, per Section 10.2 of the client requirements —
 no real LED City employee/customer/business data anywhere in this repo.
 
-Verification: `npm test` in `/backend` runs a 69-check end-to-end smoke test
-(`scripts/smoke-test.js`) against the running dev server — auth, the Section 9
-consent gate, role/department/task-level scoping, priority ordering, timer +
-overrun, blocked-why, dependency auto-unblock, human-in-the-loop completion,
-the integration signal scanner, assistant approval gates, auto-handoff
-proposals, alerts/flags, presence/heartbeat, live-view gating, scorecard and
-digest. All 69 pass; the frontend TypeScript build is clean.
+Verification: `npm test` in `/backend` boots its own in-memory server on a free
+port. It does not use port 5000 or a configured MongoDB unless
+`SMOKE_BASE_URL` is set on purpose. Leave that unset for routine checks.
+`npm run build` in `/frontend` typechecks and builds. The assistant, scorecard,
+live view, and admin settings now exist in the app; the older "not in this
+scaffold yet" list further down is historical.
 
 This is a local dev scaffold. Per Section 10.1, once this is reviewed it
 should be pushed as the first commit into a **private repo under the LED
@@ -80,8 +79,8 @@ The backend now ships with:
 
 - **helmet** — sets protective HTTP headers
 - **CORS locked to known origins** (`FRONTEND_ORIGIN` in `.env`), not `*`
-- **express-rate-limit** — 300 req/15min globally, 10 req/15min specifically
-  on `/auth/login` so a leaked or guessed password can't be brute-forced
+- **express-rate-limit** — 1000 req/15min globally (`RATE_LIMIT_MAX`), 10 req/15min specifically
+  on `/auth/login` (`LOGIN_RATE_LIMIT_MAX`) so a leaked or guessed password can't be brute-forced
 - **express-mongo-sanitize** — strips `$`/`.` operators from input to block
   NoSQL injection (e.g. `{"email": {"$ne": null}}`)
 - **hpp** — blocks HTTP parameter pollution

@@ -1,18 +1,23 @@
 // End-to-end smoke test for the Phase 1+2 API.
 //
-// Prereq: the dev server must be running (npm run dev:memory or npm run dev
-// with a seeded Mongo). Run with:
+// By default this boots its own in-memory API on a free port. It does not
+// talk to whatever is already listening on :5000, and it does not use a
+// shared database. Set SMOKE_BASE_URL only when you intentionally want to
+// hit a specific server.
 //
 //   node scripts/smoke-test.js
 //
-// Exits 0 when every check passes, 1 otherwise. Safe to run repeatedly on a
-// freshly booted dev:memory server (it mutates state, so reseed by restarting
-// if you need a clean slate).
+// Exits 0 when every check passes, 1 otherwise. The isolated server is
+// discarded when the process exits.
 //
 // Mock logins used here are seeded by seedData.js (Section 10.2 - mock data
 // only, no real employee data).
 
-const BASE = process.env.SMOKE_BASE_URL || "http://localhost:5000/api";
+const { spawn } = require("child_process");
+const net = require("net");
+const path = require("path");
+
+let BASE = process.env.SMOKE_BASE_URL || "";
 
 let passed = 0;
 let failed = 0;
@@ -56,7 +61,16 @@ async function main() {
   // ------------------------------------------------------------------
   console.log("[health & auth]");
   const health = await api("GET", "/health");
-  check("health endpoint responds", health.status === 200);
+  check(
+    "health endpoint responds without provider or mock-mode details",
+    health.status === 200 &&
+      health.data &&
+      health.data.status === "ok" &&
+      health.data.service === "led-city-workforce-backend" &&
+      !Object.prototype.hasOwnProperty.call(health.data, "aiProvider") &&
+      !Object.prototype.hasOwnProperty.call(health.data, "mockMode"),
+    `got ${health.status}`
+  );
 
   const anon = await api("GET", "/tasks");
   check("tasks without token -> 401", anon.status === 401, `got ${anon.status}`);
@@ -81,6 +95,28 @@ async function main() {
   const omairToken = omairLogin.data.token;
   check("omair (super admin) login ok", omairLogin.status === 200);
 
+  // Live-view SSE must not accept a JWT from the query string. A missing
+  // session id that is still a valid ObjectId proves the header passed auth
+  // and reached the controller (404), instead of being rejected as anonymous.
+  const queryStream = await fetch(
+    `${BASE}/liveview/sessions/000000000000000000000000/stream?token=${encodeURIComponent(omairToken)}`
+  );
+  check(
+    "live-view stream rejects query-string token",
+    queryStream.status === 401,
+    `got ${queryStream.status}`
+  );
+  const headerStream = await api(
+    "GET",
+    "/liveview/sessions/000000000000000000000000/stream",
+    { token: omairToken }
+  );
+  check(
+    "live-view stream accepts Authorization header",
+    headerStream.status === 404,
+    `got ${headerStream.status}`
+  );
+
   const mariaLogin = await api("POST", "/auth/login", {
     body: { email: "maria@mock.ledcity.test", password: "MockPass123!" },
   });
@@ -103,10 +139,57 @@ async function main() {
     preConsent.status === 403 && preConsent.data.code === "CONSENT_REQUIRED",
     `got ${preConsent.status}`
   );
+  const consentBypass = await api("GET", "/tasks/my-queue?next=/consent", { token: bilalToken });
+  check(
+    "consent gate ignores a /consent query string",
+    consentBypass.status === 403 && consentBypass.data.code === "CONSENT_REQUIRED",
+    `got ${consentBypass.status}`
+  );
+  const meBefore = await api("GET", "/auth/me", { token: bilalToken });
+  check(
+    "unconsented user can restore their own session",
+    meBefore.status === 200 &&
+      meBefore.data.user &&
+      meBefore.data.user.consentAccepted === false &&
+      !meBefore.data.user.passwordHash,
+    `got ${meBefore.status}`
+  );
+  const notice = await api("GET", "/auth/consent", { token: bilalToken });
+  const noticeText = JSON.stringify(notice.data || {});
+  check(
+    "consent notice is an unapproved draft",
+    notice.status === 200 &&
+      notice.data.legallyApproved === false &&
+      notice.data.version === "draft-2026-10-26" &&
+      noticeText.includes("not been approved") &&
+      noticeText.includes("No retention period has been approved"),
+    `got ${notice.status}`
+  );
   const accept = await api("POST", "/auth/consent", { token: bilalToken });
-  check("consent acceptance works", accept.status === 200);
+  check(
+    "consent acceptance records the draft version",
+    accept.status === 200 &&
+      accept.data.legallyApproved === false &&
+      accept.data.consentVersion === notice.data.version &&
+      accept.data.user &&
+      accept.data.user.consentCurrent === true,
+    `got ${accept.status}`
+  );
   const postConsent = await api("GET", "/tasks/my-queue", { token: bilalToken });
   check("consented user can use the API", postConsent.status === 200);
+  const withdrawn = await api("POST", "/auth/consent/withdraw", { token: bilalToken });
+  const afterWithdraw = await api("GET", "/tasks/my-queue", { token: bilalToken });
+  check(
+    "withdrawing consent blocks the API and does not claim records were deleted",
+    withdrawn.status === 200 &&
+      withdrawn.data.user.consentCurrent === false &&
+      withdrawn.data.message.includes("not deleted") &&
+      afterWithdraw.status === 403 &&
+      afterWithdraw.data.code === "CONSENT_REQUIRED",
+    `withdraw ${withdrawn.status} next ${afterWithdraw.status}`
+  );
+  const acceptAgain = await api("POST", "/auth/consent", { token: bilalToken });
+  check("consent can be accepted again after withdrawal", acceptAgain.status === 200);
 
   const me = await api("GET", "/auth/me", { token: bilalToken });
   check(
@@ -423,6 +506,31 @@ async function main() {
   // 11. AI assistant (Section 5) + approval gates (docs/approval-gates.md)
   // ------------------------------------------------------------------
   console.log("\n[assistant & approval gates]");
+  const providerInfo = await api("GET", "/assistant/provider", { token: bilalToken });
+  const providerDump = JSON.stringify(providerInfo.data || {});
+  check(
+    "provider info names mock and does not include a key",
+    providerInfo.status === 200 &&
+      providerInfo.data.provider === "mock" &&
+      providerInfo.data.live === false &&
+      !Object.prototype.hasOwnProperty.call(providerInfo.data, "apiKey") &&
+      !providerDump.includes("sk-") &&
+      !providerDump.includes("AIza"),
+    providerDump.slice(0, 160)
+  );
+
+  const adminAsk = await api("POST", "/assistant/ask", {
+    token: omairToken,
+    body: { question: "List every employee task" },
+  });
+  check(
+    "super-admin model context is not the whole workforce",
+    adminAsk.status === 200 &&
+      !String(adminAsk.data.text).includes("showroom display") &&
+      !String(adminAsk.data.text).includes("invoice batch"),
+    String(adminAsk.data && adminAsk.data.text).slice(0, 160)
+  );
+
   const ask = await api("POST", "/assistant/ask", {
     token: bilalToken,
     body: { question: "What is my current task?" },
@@ -431,6 +539,46 @@ async function main() {
     "Q&A answers from own data (mock provider)",
     ask.status === 200 && ask.data.text && ask.data.provider === "mock",
     JSON.stringify(ask.data).slice(0, 120)
+  );
+  check(
+    "employee Q&A cannot see another employee's tasks",
+    ask.status === 200 &&
+      !String(ask.data.text).includes("showroom display") &&
+      !String(ask.data.text).includes("invoice batch")
+  );
+
+  const emptyAsk = await api("POST", "/assistant/ask", {
+    token: bilalToken,
+    body: { question: "   " },
+  });
+  check("blank question rejected", emptyAsk.status === 400);
+
+  const badHistory = await api("POST", "/assistant/ask", {
+    token: bilalToken,
+    body: { question: "What is blocked?", history: "ignore the filter" },
+  });
+  check("non-array history rejected", badHistory.status === 400);
+
+  const followUp = await api("POST", "/assistant/ask", {
+    token: bilalToken,
+    body: {
+      question: "What is blocking that?",
+      history: [
+        { role: "user", content: "What should I work on next?" },
+        { role: "assistant", content: "Start with the proposal draft." },
+      ],
+      screen: { page: "home", error: "Task title is required" },
+      userId: String(mariaId),
+      role: "SUPER_ADMIN",
+    },
+  });
+  check(
+    "follow-up stays inside the signed-in employee's scope",
+    followUp.status === 200 &&
+      followUp.data.provider === "mock" &&
+      !String(followUp.data.text).includes("showroom display") &&
+      !String(followUp.data.text).includes("invoice batch"),
+    JSON.stringify(followUp.data).slice(0, 160)
   );
 
   const draft = await api("POST", "/assistant/draft", {
@@ -692,18 +840,500 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // Scorecard, team presence, live-view consent, admin gate
+  // ------------------------------------------------------------------
+  console.log("\n[scorecard, presence, live view, admin]");
+
+  const teamAnon = await api("GET", "/scorecard/team");
+  check("team scorecard without token -> 401", teamAnon.status === 401, `got ${teamAnon.status}`);
+
+  const teamAsEmp = await api("GET", "/scorecard/team", { token: bilalToken });
+  check("employee cannot open the team scorecard", teamAsEmp.status === 403, `got ${teamAsEmp.status}`);
+
+  const myCard = await api("GET", "/scorecard/my", { token: bilalToken });
+  check(
+    "employee can open their own scorecard",
+    myCard.status === 200 && myCard.data.week && Array.isArray(myCard.data.trends.weeks),
+    `got ${myCard.status}`
+  );
+  check(
+    "employee scorecard stays labelled as a draft",
+    myCard.data.week.isLive === false && String(myCard.data.week.banner || "").includes("DRAFT"),
+    `live=${myCard.data.week && myCard.data.week.isLive}`
+  );
+
+  const teamAsMgr = await api("GET", "/scorecard/team", { token: sanaToken });
+  const teamNames = ((teamAsMgr.data && teamAsMgr.data.members) || []).map((m) => m.employee.name);
+  check(
+    "manager team scorecard stays inside the department",
+    teamAsMgr.status === 200 &&
+      teamAsMgr.data.department === "Overseas Ops" &&
+      teamNames.some((n) => n.includes("Bilal")) &&
+      !teamNames.some((n) => n.includes("Maria") || n.includes("Yusuf")),
+    `dept=${teamAsMgr.data && teamAsMgr.data.department} names=${teamNames.join(", ")}`
+  );
+  check(
+    "manager team scorecard stays labelled as a draft",
+    teamAsMgr.data.isLive === false && String(teamAsMgr.data.banner || "").includes("DRAFT")
+  );
+
+  const deptAsMgr = await api("GET", "/scorecard/departments", { token: sanaToken });
+  check("manager cannot open the all-department scorecard", deptAsMgr.status === 403, `got ${deptAsMgr.status}`);
+  const deptAsAdmin = await api("GET", "/scorecard/departments", { token: omairToken });
+  check(
+    "super admin department roll-up stays labelled as a draft",
+    deptAsAdmin.status === 200 &&
+      deptAsAdmin.data.isLive === false &&
+      String(deptAsAdmin.data.banner || "").includes("DRAFT"),
+    `got ${deptAsAdmin.status}`
+  );
+
+  const crossRate = await api("POST", "/scorecard/rate", {
+    token: sanaToken,
+    body: { employeeId: mariaId, score: 5, note: "should not save" },
+  });
+  check("manager cannot rate another department", crossRate.status === 403, `got ${crossRate.status}`);
+
+  const ownRate = await api("POST", "/scorecard/rate", {
+    token: sanaToken,
+    body: { employeeId: bilal.user.id, score: 4, note: "on track" },
+  });
+  check("manager can rate their own department", ownRate.status === 200 && ownRate.data.score === 4);
+
+  const foreignRatings = await api("GET", `/scorecard/ratings?userId=${mariaId}`, { token: sanaToken });
+  check(
+    "manager cannot read another department's ratings",
+    foreignRatings.status === 403,
+    `got ${foreignRatings.status}`
+  );
+
+  const weightBlock = await api("PUT", "/scorecard/weights", {
+    token: sanaToken,
+    body: { isLive: true },
+  });
+  check("manager cannot publish scorecard weights", weightBlock.status === 403, `got ${weightBlock.status}`);
+
+  const activityOnly = await api("PUT", "/scorecard/weights", {
+    token: omairToken,
+    body: {
+      isLive: false,
+      weights: {
+        onTimePct: 0,
+        managerRating: 0,
+        estimateAccuracyPct: 0,
+        tasksCompleted: 0,
+        reworkPenalty: 0,
+        activityIdlePct: 10,
+      },
+    },
+  });
+  const activityCard = await api("GET", "/scorecard/my", { token: bilalToken });
+  check(
+    "activity is not scored when it is the only input",
+    activityOnly.status === 200 &&
+      activityCard.data.week.score.value === null &&
+      activityCard.data.week.score.activityIdleOnly === true &&
+      activityCard.data.week.isLive === false,
+    `save ${activityOnly.status} score=${activityCard.data.week && activityCard.data.week.score && activityCard.data.week.score.value}`
+  );
+  const restored = await api("PUT", "/scorecard/weights", {
+    token: omairToken,
+    body: {
+      isLive: false,
+      weights: {
+        onTimePct: 30,
+        managerRating: 25,
+        estimateAccuracyPct: 20,
+        tasksCompleted: 15,
+        reworkPenalty: 10,
+        activityIdlePct: 0,
+      },
+    },
+  });
+  check("draft weights can be restored", restored.status === 200 && restored.data.isLive === false);
+
+  const presenceAnon = await api("GET", "/activity/team");
+  check("team presence without token -> 401", presenceAnon.status === 401, `got ${presenceAnon.status}`);
+
+  const presenceEmp = await api("GET", "/activity/team", { token: bilalToken });
+  check("employee cannot list team presence", presenceEmp.status === 403, `got ${presenceEmp.status}`);
+
+  const presenceMgr = await api("GET", "/activity/team", { token: sanaToken });
+  check(
+    "manager presence list is department-scoped",
+    presenceMgr.status === 200 &&
+      Array.isArray(presenceMgr.data) &&
+      presenceMgr.data.length > 0 &&
+      presenceMgr.data.every((p) => p.department === "Overseas Ops"),
+    `got ${presenceMgr.status}`
+  );
+
+  const empView = await api("POST", "/liveview/sessions", {
+    token: bilalToken,
+    body: { employeeId: mariaId, reason: "employee probe" },
+  });
+  check("employee cannot request a live view", empView.status === 403, `got ${empView.status}`);
+
+  const mgrView = await api("POST", "/liveview/sessions", {
+    token: sanaToken,
+    body: { employeeId: mariaId, reason: "cross-department probe" },
+  });
+  check("manager cannot request a live view outside policy", mgrView.status === 403, `got ${mgrView.status}`);
+
+  const adminView = await api("POST", "/liveview/sessions", {
+    token: omairToken,
+    body: { employeeId: mariaId, reason: "audit probe" },
+  });
+  const requestedId = adminView.data && adminView.data.session && adminView.data.session.id;
+  check(
+    "super admin live view waits for the employee",
+    adminView.status === 201 && adminView.data.session.status === "REQUESTED" && requestedId,
+    `got ${adminView.status}`
+  );
+
+  const pending = await api("GET", "/liveview/sessions/for-me", { token: mariaToken });
+  check(
+    "employee sees the pending live-view request",
+    pending.status === 200 && pending.data.pending && pending.data.pending.id === requestedId
+  );
+
+  const strangerApprove = await api("POST", `/liveview/sessions/${requestedId}/approve`, {
+    token: bilalToken,
+  });
+  check(
+    "another employee cannot approve the request",
+    strangerApprove.status === 403,
+    `got ${strangerApprove.status}`
+  );
+
+  const declined = await api("POST", `/liveview/sessions/${requestedId}/deny`, { token: mariaToken });
+  check(
+    "employee can decline the live view",
+    declined.status === 200 && declined.data.session.status === "DENIED"
+  );
+
+  const digestEmp = await api("GET", "/digest/weekly", { token: bilalToken });
+  check("employee cannot read the Friday digest", digestEmp.status === 403, `got ${digestEmp.status}`);
+
+  const adminEmp = await api("GET", "/admin/system", { token: bilalToken });
+  check("employee cannot open admin settings", adminEmp.status === 403, `got ${adminEmp.status}`);
+
+  const directoryEmp = await api("GET", "/users", { token: bilalToken });
+  check("employee cannot list the staff directory", directoryEmp.status === 403, `got ${directoryEmp.status}`);
+
+  const empDepts = await api("GET", "/users/departments", { token: bilalToken });
+  check("employee cannot list departments", empDepts.status === 403, `got ${empDepts.status}`);
+
+  const mgrDepts = await api("GET", "/users/departments", { token: sanaToken });
+  check(
+    "manager department list is only their own department",
+    mgrDepts.status === 200 &&
+      Array.isArray(mgrDepts.data) &&
+      mgrDepts.data.length === 1 &&
+      mgrDepts.data[0] === "Overseas Ops",
+    JSON.stringify(mgrDepts.data)
+  );
+
+  const adminDepts = await api("GET", "/users/departments", { token: omairToken });
+  check(
+    "super admin department list includes every seeded department",
+    adminDepts.status === 200 &&
+      Array.isArray(adminDepts.data) &&
+      ["Executive", "Overseas Ops", "Showroom", "Finance"].every((name) => adminDepts.data.includes(name)),
+    JSON.stringify(adminDepts.data)
+  );
+
+  // ------------------------------------------------------------------
+  // Staff accounts: create, setup link, reset, activation
+  // ------------------------------------------------------------------
+  console.log("\n[staff accounts]");
+
+  const staffBody = {
+    name: "Nora Newhire",
+    email: "nora.newhire@mock.ledcity.test",
+    role: "EMPLOYEE",
+    department: "Showroom",
+    timezone: "America/Chicago",
+  };
+  const created = await api("POST", "/admin/users", { token: omairToken, body: staffBody });
+  const setupToken = created.data && created.data.setup && created.data.setup.token;
+  const createdUser = created.data && created.data.user;
+  check(
+    "admin creates an account without returning a password",
+    created.status === 201 &&
+      createdUser &&
+      createdUser.email === staffBody.email &&
+      createdUser.consentAccepted === false &&
+      !createdUser.passwordHash &&
+      !created.data.password &&
+      typeof setupToken === "string" &&
+      setupToken.length > 20 &&
+      created.data.setup.delivery.email === "not_configured",
+    `got ${created.status}`
+  );
+
+  const duplicate = await api("POST", "/admin/users", { token: omairToken, body: staffBody });
+  check("duplicate email rejected", duplicate.status === 409, `got ${duplicate.status}`);
+
+  const badRole = await api("POST", "/admin/users", {
+    token: omairToken,
+    body: { ...staffBody, email: "role.probe@mock.ledcity.test", role: "OWNER" },
+  });
+  check("invalid role rejected", badRole.status === 400, `got ${badRole.status}`);
+
+  const badDepartment = await api("POST", "/admin/users", {
+    token: omairToken,
+    body: { ...staffBody, email: "dept.probe@mock.ledcity.test", department: "   " },
+  });
+  check("blank department rejected", badDepartment.status === 400, `got ${badDepartment.status}`);
+
+  const employeeCreate = await api("POST", "/admin/users", {
+    token: bilalToken,
+    body: { ...staffBody, email: "emp.probe@mock.ledcity.test" },
+  });
+  check("employee cannot create accounts", employeeCreate.status === 403, `got ${employeeCreate.status}`);
+
+  const managerCreate = await api("POST", "/admin/users", {
+    token: sanaToken,
+    body: { ...staffBody, email: "mgr.probe@mock.ledcity.test" },
+  });
+  check("manager cannot create accounts", managerCreate.status === 403, `got ${managerCreate.status}`);
+
+  const wrongPurpose = await api("POST", "/auth/reset-password", {
+    body: { token: setupToken, password: "NewHirePass9" },
+  });
+  check("setup token cannot reset a password", wrongPurpose.status === 400, `got ${wrongPurpose.status}`);
+
+  const setup = await api("POST", "/auth/setup", {
+    body: { token: setupToken, password: "NewHirePass1" },
+  });
+  check("setup token sets a password once", setup.status === 200 && !setup.data.token, `got ${setup.status}`);
+
+  const setupReplay = await api("POST", "/auth/setup", {
+    body: { token: setupToken, password: "NewHirePass1" },
+  });
+  check("setup token cannot be reused", setupReplay.status === 400, `got ${setupReplay.status}`);
+
+  const newLogin = await api("POST", "/auth/login", {
+    body: { email: staffBody.email, password: "NewHirePass1" },
+  });
+  check(
+    "new account can sign in and still needs consent",
+    newLogin.status === 200 && newLogin.data.user.consentAccepted === false,
+    `got ${newLogin.status}`
+  );
+
+  const forgot = await api("POST", "/auth/forgot-password", { body: { email: staffBody.email } });
+  const forgotDump = JSON.stringify(forgot.data || {});
+  check(
+    "forgot password does not return a token",
+    forgot.status === 200 && !forgotDump.toLowerCase().includes("token") && !forgot.data.setup,
+    `got ${forgot.status}`
+  );
+
+  const resetLink = await api("POST", `/admin/users/${createdUser.id}/access-link`, {
+    token: omairToken,
+    body: { purpose: "RESET" },
+  });
+  const resetToken = resetLink.data && resetLink.data.token;
+  check(
+    "admin can issue a one-time reset link",
+    resetLink.status === 200 &&
+      typeof resetToken === "string" &&
+      resetToken !== setupToken &&
+      resetLink.data.delivery.email === "not_configured",
+    `got ${resetLink.status}`
+  );
+
+  const reset = await api("POST", "/auth/reset-password", {
+    body: { token: resetToken, password: "NewHirePass2" },
+  });
+  check("reset token replaces the password once", reset.status === 200, `got ${reset.status}`);
+
+  const resetReplay = await api("POST", "/auth/reset-password", {
+    body: { token: resetToken, password: "NewHirePass3" },
+  });
+  check("reset token cannot be reused", resetReplay.status === 400, `got ${resetReplay.status}`);
+
+  const oldPassword = await api("POST", "/auth/login", {
+    body: { email: staffBody.email, password: "NewHirePass1" },
+  });
+  check("old password stops working", oldPassword.status === 401, `got ${oldPassword.status}`);
+
+  const replacedLogin = await api("POST", "/auth/login", {
+    body: { email: staffBody.email, password: "NewHirePass2" },
+  });
+  check("new password works", replacedLogin.status === 200, `got ${replacedLogin.status}`);
+
+  const deactivated = await api("PATCH", `/admin/users/${createdUser.id}`, {
+    token: omairToken,
+    body: { isActive: false },
+  });
+  check(
+    "admin can deactivate an account",
+    deactivated.status === 200 && deactivated.data.isActive === false,
+    `got ${deactivated.status}`
+  );
+
+  const inactiveLogin = await api("POST", "/auth/login", {
+    body: { email: staffBody.email, password: "NewHirePass2" },
+  });
+  check("deactivated account cannot sign in", inactiveLogin.status === 401, `got ${inactiveLogin.status}`);
+
+  const reactivated = await api("PATCH", `/admin/users/${createdUser.id}`, {
+    token: omairToken,
+    body: { isActive: true, department: "Finance" },
+  });
+  check(
+    "admin can reactivate and edit the department",
+    reactivated.status === 200 && reactivated.data.isActive === true && reactivated.data.department === "Finance",
+    `got ${reactivated.status}`
+  );
+
+  const selfOff = await api("PATCH", `/admin/users/${omairLogin.data.user.id}`, {
+    token: omairToken,
+    body: { isActive: false },
+  });
+  check(
+    "super admin cannot deactivate their own account",
+    selfOff.status === 400 && selfOff.data.code === "SELF_DEACTIVATE",
+    `got ${selfOff.status}`
+  );
+
+  const staffList = await api("GET", "/admin/users", { token: omairToken });
+  const staffDump = JSON.stringify(staffList.data || {});
+  check(
+    "staff list hides secrets",
+    staffList.status === 200 &&
+      Array.isArray(staffList.data.users) &&
+      staffList.data.users.some((row) => row.email === staffBody.email) &&
+      !staffDump.includes("passwordHash") &&
+      !staffDump.includes(setupToken) &&
+      !staffDump.includes(resetToken),
+    `got ${staffList.status}`
+  );
+
+  const auditRows = await api("GET", "/admin/audit?limit=40", { token: omairToken });
+  const auditDump = JSON.stringify(auditRows.data || {});
+  check(
+    "audit log does not store access tokens",
+    auditRows.status === 200 && !auditDump.includes(setupToken) && !auditDump.includes(resetToken),
+    `got ${auditRows.status}`
+  );
+  check(
+    "account create, setup, and reset link are audited",
+    auditDump.includes("USER_CREATED") &&
+      auditDump.includes("PASSWORD_SET") &&
+      auditDump.includes("RESET_LINK_ISSUED"),
+    "missing one of USER_CREATED, PASSWORD_SET, RESET_LINK_ISSUED"
+  );
+
+  // ------------------------------------------------------------------
   // Summary
   // ------------------------------------------------------------------
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) {
     console.log("\nFailures:");
     failures.forEach((f) => console.log(`  - ${f}`));
-    process.exit(1);
+    return 1;
   }
-  process.exit(0);
+  return 0;
 }
 
-main().catch((err) => {
-  console.error("[smoke-test] crashed:", err);
-  process.exit(1);
-});
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close((err) => (err ? reject(err) : resolve(port)));
+    });
+    server.on("error", reject);
+  });
+}
+
+function stopChild(child) {
+  if (!child || child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, 5000);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    if (process.platform === "win32") {
+      spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    } else {
+      child.kill("SIGTERM");
+    }
+  });
+}
+
+async function bootIsolatedServer() {
+  const port = await freePort();
+  const child = spawn(process.execPath, ["scripts/dev-memory.js"], {
+    cwd: path.join(__dirname, ".."),
+    env: { ...process.env, PORT: String(port) },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let log = "";
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("isolated test server did not become ready"));
+    }, 90000);
+    const onData = (chunk) => {
+      log += chunk.toString();
+      if (log.includes("listening on")) {
+        clearTimeout(timer);
+        resolve();
+      }
+      if (log.includes("failed to start")) {
+        clearTimeout(timer);
+        reject(new Error("isolated test server failed to start"));
+      }
+    };
+    child.stdout.on("data", onData);
+    child.stderr.on("data", onData);
+    child.once("exit", (code) => {
+      if (!log.includes("listening on")) {
+        clearTimeout(timer);
+        reject(new Error(`isolated test server exited (${code}) before listening`));
+      }
+    });
+  });
+  try {
+    await ready;
+  } catch (err) {
+    await stopChild(child);
+    throw err;
+  }
+  const base = `http://127.0.0.1:${port}/api`;
+  for (let attempt = 0; attempt < 25; attempt++) {
+    try {
+      const health = await fetch(`${base}/health`);
+      if (health.ok) break;
+    } catch {
+      /* process is up but not accepting yet */
+    }
+    await sleep(200);
+  }
+  return { base, stop: () => stopChild(child) };
+}
+
+async function start() {
+  let stop = async () => {};
+  try {
+    if (!BASE) {
+      const isolated = await bootIsolatedServer();
+      BASE = isolated.base;
+      stop = isolated.stop;
+    }
+    const code = await main();
+    await stop();
+    process.exit(code);
+  } catch (err) {
+    console.error("[smoke-test] crashed:", err);
+    await stop();
+    process.exit(1);
+  }
+}
+
+start();

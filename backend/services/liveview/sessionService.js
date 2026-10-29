@@ -93,6 +93,12 @@ async function requestSession({ viewer, employeeId, reason = "" }) {
     err.status = 400;
     throw err;
   }
+  if (viewer.role === "MANAGER" && target.department !== viewer.department) {
+    const err = new Error("Outside your department");
+    err.code = "LIVEVIEW_OUTSIDE_DEPARTMENT";
+    err.status = 403;
+    throw err;
+  }
 
   const allowed = await permissions.canBeLiveViewed(target);
   if (!allowed.allowed) {

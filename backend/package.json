@@ -12,7 +12,7 @@
     "retention": "node scripts/retention.js",
     "digest": "node scripts/run-digest.js",
     "agent": "node scripts/activity-agent.js",
-    "test": "node scripts/smoke-test.js"
+    "test": "node scripts/ai-provider-check.js && node scripts/smoke-test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

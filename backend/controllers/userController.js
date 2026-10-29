@@ -62,6 +62,12 @@ exports.listDepartments = async (req, res) => {
   if (req.user.role === "EMPLOYEE") {
     return res.status(403).json({ message: "Managers and administrators only" });
   }
+  // A manager already knows their own department. The full list would tell
+  // them which other departments exist. Super Admin keeps the complete list.
+  if (req.user.role === "MANAGER") {
+    const own = String(req.user.department || "").trim();
+    return res.json(own ? [own] : []);
+  }
   const departments = await User.distinct("department");
   res.json(departments.filter(Boolean).sort());
 };

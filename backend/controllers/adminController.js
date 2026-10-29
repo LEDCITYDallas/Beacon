@@ -10,6 +10,10 @@ const config = require("../config/env");
 const frameBus = require("../services/liveview/frameBus");
 const { audit } = require("../utils/audit");
 const { isValidTimeZone } = require("../utils/timezone");
+const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+const User = require("../models/User");
+const accessTokens = require("../services/accounts/accessToken");
 
 // ---------------------------------------------------------------------
 // Admin controller (Priorities 1, 3, 8, 9, 10).
@@ -263,12 +267,24 @@ exports.updateUser = async (req, res) => {
   };
 
   if (role !== undefined) {
-    if (!["SUPER_ADMIN", "MANAGER", "EMPLOYEE"].includes(role)) {
+    if (!User.ROLES.includes(role)) {
       return res.status(400).json({ message: "role must be SUPER_ADMIN, MANAGER or EMPLOYEE" });
+    }
+    if (String(target._id) === String(req.user._id) && role !== "SUPER_ADMIN") {
+      return res.status(400).json({
+        message: "You cannot remove your own administrator role",
+        code: "SELF_DEMOTE",
+      });
     }
     target.role = role;
   }
-  if (department !== undefined) target.department = String(department).slice(0, 80);
+  if (department !== undefined) {
+    const cleaned = cleanDepartment(department);
+    if (!cleaned) {
+      return res.status(400).json({ message: "department is required and must be 80 characters or fewer" });
+    }
+    target.department = cleaned;
+  }
   if (timezone !== undefined) {
     if (!isValidTimeZone(timezone)) {
       return res
@@ -278,7 +294,15 @@ exports.updateUser = async (req, res) => {
     target.timezone = timezone;
   }
   if (reducedMonitoring !== undefined) target.reducedMonitoring = Boolean(reducedMonitoring);
-  if (isActive !== undefined) target.isActive = Boolean(isActive);
+  if (isActive !== undefined) {
+    if (isActive === false && String(target._id) === String(req.user._id)) {
+      return res.status(400).json({
+        message: "You cannot deactivate your own account",
+        code: "SELF_DEACTIVATE",
+      });
+    }
+    target.isActive = Boolean(isActive);
+  }
   if (whatsappNumber !== undefined) target.whatsappNumber = String(whatsappNumber).slice(0, 32);
   if (liveViewEnabled !== undefined) {
     target.liveViewEnabled = liveViewEnabled === null ? null : Boolean(liveViewEnabled);
@@ -303,4 +327,150 @@ exports.updateUser = async (req, res) => {
   });
 
   res.json({ id: target._id, name: target.name, email: target.email, ...after });
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function cleanName(value) {
+  const name = String(value || "").replace(/\s+/g, " ").trim();
+  if (!name || name.length > 80) return "";
+  return name;
+}
+
+function cleanEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) return "";
+  return email;
+}
+
+function cleanDepartment(value) {
+  const department = String(value || "").replace(/\s+/g, " ").trim();
+  if (!department || department.length > 80) return "";
+  return department;
+}
+
+function staffShape(user) {
+  return {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    department: user.department,
+    timezone: user.timezone,
+    isActive: user.isActive,
+    reducedMonitoring: Boolean(user.reducedMonitoring),
+    liveViewEnabled: user.liveViewEnabled,
+    consentAccepted: Boolean(user.consentAccepted),
+  };
+}
+
+exports.listStaff = async (req, res) => {
+  if (!(await requireSettingsAccess(req, res))) return;
+  const rows = await User.find().select("-passwordHash").sort({ name: 1 }).limit(500);
+  res.json({ users: rows.map(staffShape) });
+};
+
+exports.createUser = async (req, res) => {
+  if (!(await requireSettingsAccess(req, res))) return;
+  const name = cleanName(req.body && req.body.name);
+  const email = cleanEmail(req.body && req.body.email);
+  const role = req.body && req.body.role;
+  const department = cleanDepartment(req.body && req.body.department);
+  const timezone = (req.body && req.body.timezone) || "America/Chicago";
+
+  if (!name) return res.status(400).json({ message: "name is required (80 characters or fewer)" });
+  if (!email) return res.status(400).json({ message: "A valid email is required" });
+  if (!User.ROLES.includes(role)) {
+    return res.status(400).json({ message: "role must be SUPER_ADMIN, MANAGER or EMPLOYEE" });
+  }
+  if (!department) {
+    return res.status(400).json({ message: "department is required and must be 80 characters or fewer" });
+  }
+  if (!isValidTimeZone(timezone)) {
+    return res.status(400).json({ message: "timezone must be a valid IANA zone, e.g. America/Chicago" });
+  }
+
+  const existing = await User.findOne({ email }).select("_id");
+  if (existing) return res.status(409).json({ message: "An account with that email already exists" });
+
+  // The person has no usable password until they open the one-time setup link.
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+  let user;
+  try {
+    user = await User.create({
+      name,
+      email,
+      passwordHash,
+      role,
+      department,
+      timezone,
+      reducedMonitoring: Boolean(req.body && req.body.reducedMonitoring),
+      consentAccepted: false,
+      isActive: true,
+    });
+  } catch (err) {
+    if (err && err.code === 11000) {
+      return res.status(409).json({ message: "An account with that email already exists" });
+    }
+    throw err;
+  }
+
+  const setup = await accessTokens.issue({
+    userId: user._id,
+    purpose: "SETUP",
+    createdBy: req.user._id,
+  });
+  const delivery = await accessTokens.deliver(user, setup, { sentBy: req.user._id });
+
+  await audit(req, {
+    action: "USER_CREATED",
+    targetType: "User",
+    targetId: user._id,
+    meta: { email, role, department, emailDelivery: delivery.email },
+  });
+
+  res.status(201).json({
+    user: staffShape(user),
+    setup: {
+      expiresAt: setup.expiresAt,
+      token: setup.token,
+      path: setup.path,
+      delivery,
+    },
+  });
+};
+
+exports.issueAccessLink = async (req, res) => {
+  if (!(await requireSettingsAccess(req, res))) return;
+  const purpose = req.body && req.body.purpose;
+  if (purpose !== "SETUP" && purpose !== "RESET") {
+    return res.status(400).json({ message: "purpose must be SETUP or RESET" });
+  }
+  const target = await User.findById(req.params.userId).select("-passwordHash");
+  if (!target) return res.status(404).json({ message: "User not found" });
+  if (!target.isActive) {
+    return res.status(400).json({ message: "Activate the account before issuing a link" });
+  }
+
+  const issued = await accessTokens.issue({
+    userId: target._id,
+    purpose,
+    createdBy: req.user._id,
+  });
+  const delivery = await accessTokens.deliver(target, issued, { sentBy: req.user._id });
+
+  await audit(req, {
+    action: purpose === "SETUP" ? "SETUP_LINK_ISSUED" : "RESET_LINK_ISSUED",
+    targetType: "User",
+    targetId: target._id,
+    meta: { emailDelivery: delivery.email },
+  });
+
+  res.json({
+    expiresAt: issued.expiresAt,
+    token: issued.token,
+    path: issued.path,
+    purpose,
+    delivery,
+  });
 };

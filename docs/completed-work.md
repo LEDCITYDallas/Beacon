@@ -11,7 +11,7 @@
 - Node/Express/MongoDB backend (`/backend`) and React + TypeScript + Vite frontend (`/frontend`).
 - JWT auth: login, `/me` (never leaks `passwordHash`), bcrypt-hashed passwords.
 - **Hard consent gate (Section 9):** middleware blocks every route except `/auth/consent` until `consentAccepted` is true — consent records version + timestamp + employee identity.
-- Hardening: helmet, CORS locked to known origins, rate limits (300/15min global, 10/15min login, separate 240/min bucket for live-view frames), express-mongo-sanitize (NoSQL injection), hpp, 200kb body cap, no stack traces in production errors.
+- Hardening: helmet, CORS locked to known origins, rate limits (1000/15min global, 10/15min login, separate 240/min bucket for live-view frames), express-mongo-sanitize (NoSQL injection), hpp, 200kb body cap, no stack traces in production errors.
 - Roles: `SUPER_ADMIN` / `MANAGER` / `EMPLOYEE` with department-scoped access (`scopeToDepartment`); reduced-monitoring flag on users.
 - Per-employee timezone support (Dallas + overseas), editable via `/api/users/me`.
 - Security reference for production Mongo: `/mongodb-setup` (localhost+Tailscale-only bind, TLS, least-privilege users).

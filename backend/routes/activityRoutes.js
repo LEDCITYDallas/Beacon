@@ -12,6 +12,11 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 router.post("/heartbeat", wrap(requireAuth), wrap(activityController.heartbeat));
 router.get("/status", wrap(requireAuth), wrap(activityController.myStatus));
 router.get("/my-activity", wrap(requireAuth), wrap(activityController.myActivitySummary));
-router.get("/team", requireRole("SUPER_ADMIN", "MANAGER"), wrap(activityController.teamStatus));
+router.get(
+  "/team",
+  wrap(requireAuth),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  wrap(activityController.teamStatus)
+);
 
 module.exports = router;

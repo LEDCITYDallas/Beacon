@@ -39,8 +39,20 @@ class AiError extends Error {
 
 function getProviderName() {
   const p = String(config.ai.provider || "mock").toLowerCase();
-  return PROVIDERS.includes(p) ? p : "mock";
+  return PROVIDERS.includes(p) ? p : "invalid";
 }
+
+// A labelled mock answer is allowed only for a temporary outage. A missing
+// or rejected key must surface as an error, or the UI would treat it as a
+// successful assistant response.
+const FALLBACK_CODES = new Set([
+  "AI_TIMEOUT",
+  "AI_RATE_LIMITED",
+  "AI_PROVIDER_ERROR",
+  "AI_INVALID_RESPONSE",
+]);
+
+const MAX_OUTPUT_CHARS = 8000;
 
 // A provider is "configured" when LED City has supplied the key Omair controls.
 function isConfigured(provider = getProviderName()) {
@@ -62,8 +74,8 @@ function describeProvider() {
   return {
     provider,
     model: config.ai.model,
-    configured: isConfigured(provider),
-    live: provider !== "mock" && isConfigured(provider),
+    configured: provider !== "invalid" && isConfigured(provider),
+    live: provider !== "mock" && provider !== "invalid" && isConfigured(provider),
     fallbackToMock: config.ai.fallbackToMock,
     timeoutMs: config.ai.timeoutMs,
     monthlyBudgetUsd: config.ai.monthlyBudgetUsd,
@@ -72,27 +84,65 @@ function describeProvider() {
   };
 }
 
+// Prior chat turns. The assistant service already caps and validates these;
+// this is a second bound so a caller cannot smuggle a huge transcript through.
+function normaliseHistory(messages) {
+  if (!Array.isArray(messages)) return [];
+  const clean = [];
+  for (const turn of messages) {
+    if (!turn || (turn.role !== "user" && turn.role !== "assistant")) continue;
+    const content = typeof turn.content === "string" ? turn.content.trim() : "";
+    if (!content) continue;
+    clean.push({ role: turn.role, content: content.slice(0, 1500) });
+  }
+  return clean.slice(-8);
+}
+
+// Vendor APIs reject two user turns in a row. Fold those together.
+function conversationTurns(history, prompt) {
+  const turns = [...history, { role: "user", content: String(prompt || "") }];
+  const merged = [];
+  for (const turn of turns) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === turn.role) last.content += "\n\n" + turn.content;
+    else merged.push({ role: turn.role, content: turn.content });
+  }
+  while (merged.length && merged[0].role !== "user") merged.shift();
+  return merged;
+}
+
+function usesReasoningTokens(model) {
+  return /^(gpt-5|o\d)/i.test(String(model || ""));
+}
+
+function geminiThinkingModel(model) {
+  return /^gemini-[34]/i.test(String(model || ""));
+}
+
 // The single entry point the assistant uses.
 //   kind      - "qa" | "draft" | "handoff" | "summary" | "next_up"
 //   system    - system instructions for this call
 //   prompt    - fully composed user prompt (context is attached by the
 //               assistant service; the model never queries the DB itself)
+//   messages  - optional prior user/assistant turns for follow-up questions
 // Returns { text, provider, model, usage, latencyMs, fallback }
-async function generate({ kind = "qa", system, prompt, maxTokens, temperature } = {}) {
+async function generate({ kind = "qa", system, prompt, messages, maxTokens, temperature } = {}) {
   const provider = getProviderName();
   const startedAt = Date.now();
+
+  if (provider === "invalid") {
+    throw new AiError(
+      "AI_NOT_CONFIGURED",
+      `AI_PROVIDER must be one of ${PROVIDERS.join(", ")}.`,
+      { status: 503 }
+    );
+  }
 
   if (provider === "mock") {
     return mockResult(kind, { system, prompt }, startedAt, { fallback: false });
   }
 
   if (!isConfigured(provider)) {
-    if (config.ai.fallbackToMock) {
-      return mockResult(kind, { system, prompt }, startedAt, {
-        fallback: true,
-        errorCode: "AI_NOT_CONFIGURED",
-      });
-    }
     throw new AiError(
       "AI_NOT_CONFIGURED",
       "The AI provider key is not configured on the server. Ask an administrator to set AI_API_KEY.",
@@ -103,6 +153,7 @@ async function generate({ kind = "qa", system, prompt, maxTokens, temperature } 
   const opts = {
     maxTokens: maxTokens || config.ai.maxOutputTokens,
     temperature: temperature === undefined ? config.ai.temperature : temperature,
+    history: normaliseHistory(messages),
   };
 
   let lastError = null;
@@ -128,7 +179,7 @@ async function generate({ kind = "qa", system, prompt, maxTokens, temperature } 
       const completionTokens = raw.completionTokens || 0;
 
       return {
-        text: raw.text.trim(),
+        text: boundOutput(raw.text),
         provider,
         model: raw.model || config.ai.model,
         usage: {
@@ -149,7 +200,7 @@ async function generate({ kind = "qa", system, prompt, maxTokens, temperature } 
     }
   }
 
-  if (config.ai.fallbackToMock) {
+  if (config.ai.fallbackToMock && FALLBACK_CODES.has(lastError.code)) {
     console.warn(`[ai] ${provider} call failed (${lastError.code}); using labelled mock fallback`);
     return mockResult(kind, { system, prompt }, startedAt, {
       fallback: true,
@@ -157,6 +208,20 @@ async function generate({ kind = "qa", system, prompt, maxTokens, temperature } 
     });
   }
   throw lastError;
+}
+
+function boundOutput(text) {
+  return String(text || "")
+    .replace(/\u0000/g, "")
+    .trim()
+    .slice(0, MAX_OUTPUT_CHARS);
+}
+
+function safeDetail(message) {
+  let text = String(message || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  const key = config.ai.apiKey && config.ai.apiKey.trim();
+  if (key && key.length > 6) text = text.split(key).join("[redacted]");
+  return text;
 }
 
 function normaliseError(err) {
@@ -170,7 +235,7 @@ function normaliseError(err) {
   return new AiError("AI_PROVIDER_ERROR", "The AI provider request failed.", {
     status: 502,
     retryable: true,
-    detail: err ? err.message : "",
+    detail: safeDetail(err ? err.message : ""),
   });
 }
 
@@ -204,10 +269,9 @@ async function readJson(res, providerLabel) {
   }
 
   if (!res.ok) {
-    const apiMessage =
-      json && (json.error?.message || json.message)
-        ? String(json.error?.message || json.message)
-        : "";
+    const apiMessage = safeDetail(
+      json && (json.error?.message || json.message) ? json.error?.message || json.message : ""
+    );
     if (res.status === 401 || res.status === 403) {
       throw new AiError("AI_AUTH_FAILED", "The AI provider rejected the configured key.", {
         status: 502,
@@ -244,8 +308,25 @@ async function readJson(res, providerLabel) {
 
 // --- Vendor calls ------------------------------------------------------
 
-async function callOpenai(system, prompt, { maxTokens, temperature }) {
+async function callOpenai(system, prompt, { maxTokens, temperature, history }) {
   const base = (config.ai.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "");
+  const model = config.ai.model;
+  const reasoning = usesReasoningTokens(model);
+  const body = {
+    model,
+    messages: [
+      { role: "system", content: system || "" },
+      ...conversationTurns(history, prompt),
+    ],
+  };
+  // GPT-5 and o-series reject max_tokens and a non-default temperature.
+  if (reasoning) {
+    body.max_completion_tokens = maxTokens;
+    body.reasoning_effort = "minimal";
+  } else {
+    body.max_tokens = maxTokens;
+    body.temperature = temperature;
+  }
   const json = await readJson(
     await fetchWithTimeout(`${base}/chat/completions`, {
       method: "POST",
@@ -253,15 +334,7 @@ async function callOpenai(system, prompt, { maxTokens, temperature }) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.ai.apiKey}`,
       },
-      body: JSON.stringify({
-        model: config.ai.model,
-        messages: [
-          { role: "system", content: system || "" },
-          { role: "user", content: prompt },
-        ],
-        temperature,
-        max_tokens: maxTokens,
-      }),
+      body: JSON.stringify(body),
     }),
     "OpenAI"
   );
@@ -276,12 +349,19 @@ async function callOpenai(system, prompt, { maxTokens, temperature }) {
   };
 }
 
-async function callGemini(system, prompt, { maxTokens, temperature }) {
+async function callGemini(system, prompt, { maxTokens, temperature, history }) {
   const base = (
     config.ai.baseUrl || "https://generativelanguage.googleapis.com/v1beta"
   ).replace(/\/$/, "");
+  const model = config.ai.model;
+  const generationConfig = { temperature, maxOutputTokens: maxTokens };
+  // Flash 3/4 think by default. Low keeps employee Q&A fast and cheap.
+  // "minimal" is rejected by Gemini 3.8 Flash.
+  if (geminiThinkingModel(model)) {
+    generationConfig.thinkingConfig = { thinkingLevel: "low" };
+  }
   const json = await readJson(
-    await fetchWithTimeout(`${base}/models/${config.ai.model}:generateContent`, {
+    await fetchWithTimeout(`${base}/models/${model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -289,8 +369,11 @@ async function callGemini(system, prompt, { maxTokens, temperature }) {
       },
       body: JSON.stringify({
         systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature, maxOutputTokens: maxTokens },
+        contents: conversationTurns(history, prompt).map((turn) => ({
+          role: turn.role === "assistant" ? "model" : "user",
+          parts: [{ text: turn.content }],
+        })),
+        generationConfig,
       }),
     }),
     "Gemini"
@@ -298,18 +381,21 @@ async function callGemini(system, prompt, { maxTokens, temperature }) {
 
   const candidate = json.candidates && json.candidates[0];
   const text = (candidate?.content?.parts || [])
+    .filter((p) => p && p.thought !== true)
     .map((p) => (typeof p.text === "string" ? p.text : ""))
     .join("");
+  const thoughts = json.usageMetadata?.thoughtsTokenCount || 0;
+  const completion = json.usageMetadata?.candidatesTokenCount || 0;
   return {
     text,
-    model: config.ai.model,
+    model,
     promptTokens: json.usageMetadata?.promptTokenCount,
-    completionTokens: json.usageMetadata?.candidatesTokenCount,
+    completionTokens: completion + thoughts,
     totalTokens: json.usageMetadata?.totalTokenCount,
   };
 }
 
-async function callAnthropic(system, prompt, { maxTokens, temperature }) {
+async function callAnthropic(system, prompt, { maxTokens, temperature, history }) {
   const base = (config.ai.baseUrl || "https://api.anthropic.com/v1").replace(/\/$/, "");
   const json = await readJson(
     await fetchWithTimeout(`${base}/messages`, {
@@ -324,7 +410,7 @@ async function callAnthropic(system, prompt, { maxTokens, temperature }) {
         max_tokens: maxTokens,
         temperature,
         system: system || undefined,
-        messages: [{ role: "user", content: prompt }],
+        messages: conversationTurns(history, prompt),
       }),
     }),
     "Anthropic"
@@ -356,6 +442,59 @@ function taskLinesFromPrompt(prompt) {
     .map((l) => l.trim().slice(2));
 }
 
+function bullets(lines) {
+  return lines.map((l) => `• ${l}`).join("\n");
+}
+
+function mockQa(prompt, lines, tag) {
+  const question = String(prompt).split("Question:").pop().toLowerCase();
+  const ready = lines.filter((l) => /\[(READY|IN_PROGRESS|PAUSED)/.test(l));
+  const blocked = lines.filter((l) => /\[BLOCKED|blocked=/.test(l));
+
+  if (/\b(leave|vacation|pto)\b/.test(question)) {
+    return `${tag} Leave requests are not tracked in this application, so there is no leave status to report.`;
+  }
+  if (/\b(clock|punch|attendance)\b/.test(question)) {
+    const presence = String(prompt)
+      .split("\n")
+      .find((l) => l.startsWith("Presence "));
+    return (
+      `${tag} There is no clock-in/clock-out ledger. ` +
+      (presence || "No presence signal was included for you.")
+    );
+  }
+  if (/\b(overdue|late)\b/.test(question)) {
+    const late = lines.filter((l) => /\bOVERDUE\b/.test(l));
+    return late.length
+      ? `${tag} Overdue in your authorized task data:\n${bullets(late.slice(0, 5))}`
+      : `${tag} None of the tasks in your authorized data are marked overdue.`;
+  }
+  if (/\bblock|\bwaiting|\bstuck/.test(question)) {
+    return blocked.length
+      ? `${tag} Blocked in your authorized task data:\n${bullets(blocked.slice(0, 5))}`
+      : `${tag} Nothing in your authorized task data is marked blocked.`;
+  }
+  if (/\b(next|today|start)\b/.test(question)) {
+    const picked = ready.length ? ready : lines;
+    return picked.length
+      ? `${tag} From your authorized task data, work these next:\n${bullets(picked.slice(0, 5))}`
+      : `${tag} You have no tasks in scope right now.`;
+  }
+
+  const words = question.match(/[a-z]{4,}/g) || [];
+  const scored = lines
+    .map((l) => ({ l, score: words.filter((w) => l.toLowerCase().includes(w)).length }))
+    .sort((a, b) => b.score - a.score)
+    .filter((x) => x.score > 0)
+    .slice(0, 5);
+
+  if (scored.length) return `${tag} From your task data:\n${bullets(scored.map((s) => s.l))}`;
+  return (
+    `${tag} I can only answer from the records you are allowed to see. Your current tasks:\n` +
+    (lines.length ? bullets(lines.slice(0, 5)) : "• (none)")
+  );
+}
+
 function mockResult(kind, { prompt }, startedAt, { fallback, errorCode = "" } = {}) {
   const lines = taskLinesFromPrompt(prompt);
   const tag = fallback ? "[MOCK FALLBACK]" : "[MOCK]";
@@ -364,32 +503,14 @@ function mockResult(kind, { prompt }, startedAt, { fallback, errorCode = "" } = 
   if (kind === "draft" || kind === "summary") {
     text =
       `${tag} Suggested draft based on the task data you have access to:\n\n` +
-      (lines.length
-        ? lines.slice(0, 4).map((l) => `• ${l}`).join("\n")
-        : "• (no task data in scope)") +
+      (lines.length ? bullets(lines.slice(0, 4)) : "• (no task data in scope)") +
       "\n\nReview and edit before sending - nothing is sent without your approval.";
   } else if (kind === "handoff") {
     text =
       `${tag} Handoff note: the task this depends on is complete, so your task is now ready to start.` +
-      (lines.length ? `\nCurrent queue:\n${lines.slice(0, 3).map((l) => `• ${l}`).join("\n")}` : "");
+      (lines.length ? `\nCurrent queue:\n${bullets(lines.slice(0, 3))}` : "");
   } else {
-    // qa - keyword match against the employee's own task lines
-    const words =
-      String(prompt)
-        .split("Question:")
-        .pop()
-        .toLowerCase()
-        .match(/[a-z]{4,}/g) || [];
-    const scored = lines
-      .map((l) => ({ l, score: words.filter((w) => l.toLowerCase().includes(w)).length }))
-      .sort((a, b) => b.score - a.score)
-      .filter((x) => x.score > 0)
-      .slice(0, 5);
-
-    text = scored.length
-      ? `${tag} From your task data:\n${scored.map((s) => `• ${s.l}`).join("\n")}`
-      : `${tag} I can only answer from your own task data. Your current tasks:\n` +
-        (lines.length ? lines.slice(0, 5).map((l) => `• ${l}`).join("\n") : "• (none)");
+    text = mockQa(prompt, lines, tag);
     if (fallback) {
       text += `\n\n(The live AI provider could not be reached: ${errorCode}. Nothing was invented.)`;
     }

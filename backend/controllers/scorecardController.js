@@ -145,17 +145,32 @@ function applyWeights(inputs, weights) {
   const value = Math.round(components.reduce((s, c) => s + c.contribution, 0) / (totalWeight / 100));
   const activityComponent = components.find((c) => c.key === "activityIdlePct");
   const activityShare = activityComponent ? activityComponent.weight / totalWeight : 0;
+  const activityIdleOnly = components.length === 1 && Boolean(activityComponent);
+  const activityIdleDominant = activityShare > 0.25;
+
+  // The weight cap alone does not stop activity from being the whole score
+  // when every other weight is zero. Withhold the number in that case, and
+  // when activity is more than a quarter of the weights that are actually used.
+  if (activityIdleOnly || activityIdleDominant) {
+    return {
+      value: null,
+      components,
+      totalWeight,
+      activityIdleShare: Number(activityShare.toFixed(3)),
+      activityIdleDominant,
+      activityIdleOnly,
+      note: "Activity/idle is not scored on its own and cannot be the dominant input.",
+    };
+  }
 
   return {
     value,
     components,
     totalWeight,
-    // Section 7 guardrails, reported explicitly so no report can quietly lean
-    // on activity/idle.
     activityIdleShare: Number(activityShare.toFixed(3)),
-    activityIdleDominant: activityShare > 0.25,
-    activityIdleOnly: components.length === 1 && Boolean(activityComponent),
-    note: "Draft formula - not active until Omair approves the weights (Section 7).",
+    activityIdleDominant,
+    activityIdleOnly,
+    note: "Draft formula - not an official score until the weights are approved.",
   };
 }
 
@@ -405,10 +420,18 @@ exports.listRatings = async (req, res) => {
     return res.status(403).json({ message: "Only managers and administrators can view ratings" });
   }
   const query = {};
-  if (req.query.userId) query.employee = req.query.userId;
-  else if (req.user.role === "MANAGER") {
+  if (req.user.role === "MANAGER") {
     const deptPeople = await User.find({ department: req.user.department }).select("_id");
-    query.employee = { $in: deptPeople.map((p) => p._id) };
+    const ids = deptPeople.map((p) => p._id);
+    if (req.query.userId) {
+      const allowed = ids.some((id) => String(id) === String(req.query.userId));
+      if (!allowed) return res.status(403).json({ message: "Outside your department" });
+      query.employee = req.query.userId;
+    } else {
+      query.employee = { $in: ids };
+    }
+  } else if (req.query.userId) {
+    query.employee = req.query.userId;
   }
 
   const rows = await Rating.find(query)

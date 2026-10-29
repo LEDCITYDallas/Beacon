@@ -64,7 +64,17 @@ async function sendInApp({ recipient, kind, subject, body, sentBy = null, relate
   });
 }
 
-async function sendEmail({ recipient, to, kind, subject, body, sentBy = null, relatedTask = null, meta = {} }) {
+async function sendEmail({
+  recipient,
+  to,
+  kind,
+  subject,
+  body,
+  logBody,
+  sentBy = null,
+  relatedTask = null,
+  meta = {},
+}) {
   const address = to || emailFor(recipient);
   const result = await emailAdapter.send({ to: address, subject, text: body });
   return logNotification({
@@ -73,7 +83,9 @@ async function sendEmail({ recipient, to, kind, subject, body, sentBy = null, re
     recipient: recipient && recipient._id ? recipient._id : recipient || null,
     recipientAddress: address || "",
     subject,
-    body,
+    // Callers that hand out a secret link pass logBody so the stored record
+    // does not keep the token.
+    body: logBody !== undefined ? logBody : body,
     driver: result.driver,
     status: result.status,
     error: result.error || "",

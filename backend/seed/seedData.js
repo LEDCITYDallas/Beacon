@@ -7,6 +7,7 @@
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const Task = require("../models/Task");
+const { VERSION } = require("../constants/consent");
 
 async function seedMockData() {
   await User.deleteMany({});
@@ -26,6 +27,7 @@ async function seedMockData() {
       notifyEmail: "omair@mock.ledcity.test",
       consentAccepted: true,
       consentAcceptedAt: new Date(),
+      consentVersion: VERSION,
     },
     {
       name: "Sana Manager (Mock)",
@@ -38,6 +40,7 @@ async function seedMockData() {
       notifyEmail: "sana.manager@mock.ledcity.test",
       consentAccepted: true,
       consentAcceptedAt: new Date(),
+      consentVersion: VERSION,
     },
     {
       name: "Bilal Overseas (Mock)",
@@ -60,6 +63,7 @@ async function seedMockData() {
       whatsappNumber: "+15550000004",
       consentAccepted: true,
       consentAcceptedAt: new Date(),
+      consentVersion: VERSION,
     },
     {
       name: "Yusuf Finance (Mock, reduced monitoring)",
@@ -72,6 +76,7 @@ async function seedMockData() {
       whatsappNumber: "+15550000005",
       consentAccepted: true,
       consentAcceptedAt: new Date(),
+      consentVersion: VERSION,
     },
   ]);
 

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { redactSecrets, describeMongoTarget } = require("../utils/redact");
 
 async function connectDB() {
   const uri = process.env.MONGO_URI;
@@ -8,10 +9,9 @@ async function connectDB() {
 
   try {
     await mongoose.connect(uri);
-    console.log(`[db] connected -> ${uri}`);
+    console.log(`[db] connected -> ${describeMongoTarget(uri)}`);
   } catch (err) {
-    console.error("[db] connection failed:", err.message);
-    process.exit(1);
+    throw new Error(`Database connection failed: ${redactSecrets(err.message)}`);
   }
 }
 

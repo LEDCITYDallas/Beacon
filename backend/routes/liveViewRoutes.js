@@ -25,7 +25,7 @@ router.post("/sessions/:id/deny", wrap(liveViewController.denySession));
 router.post("/sessions/:id/frames", wrap(liveViewController.postFrame));
 router.post("/sessions/:id/end", wrap(liveViewController.endSession));
 
-// SSE stream. requireAuthStream also allows ?token= for tooling/testing.
+// SSE stream. Authorization header only; ?token= is not accepted.
 router.get("/sessions/:id/stream", wrap(requireAuthStream), wrap(liveViewController.stream));
 
 module.exports = router;

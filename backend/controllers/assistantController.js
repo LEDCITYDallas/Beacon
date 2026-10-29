@@ -25,6 +25,59 @@ function isValidObjectId(id) {
   return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
 }
 
+// Page keys the frontend may send. The label is what the model sees.
+// Anything else is dropped — a client cannot invent a privileged screen.
+const SCREEN_PAGES = {
+  home: "Home (my tasks)",
+  assistant: "Assistant",
+  scorecard: "My scorecard",
+  team: "Team queue",
+  "team-scorecard": "Team scorecard",
+  liveview: "Live view",
+  admin: "Administration",
+};
+
+const MAX_HISTORY = 8;
+const MAX_TURN_CHARS = 1500;
+
+function badRequest(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
+function sanitizeHistory(raw) {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw badRequest("history must be an array");
+  if (raw.length > MAX_HISTORY) {
+    throw badRequest(`history is limited to the last ${MAX_HISTORY} turns`);
+  }
+  return raw.map((turn, index) => {
+    if (!turn || typeof turn !== "object" || Array.isArray(turn)) {
+      throw badRequest(`history[${index}] is invalid`);
+    }
+    const role = turn.role === "assistant" || turn.role === "user" ? turn.role : "";
+    const content = typeof turn.content === "string" ? turn.content.trim() : "";
+    if (!role || !content) {
+      throw badRequest(`history[${index}] must be a user or assistant message`);
+    }
+    return { role, content: content.slice(0, MAX_TURN_CHARS) };
+  });
+}
+
+function sanitizeScreen(raw) {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) return null;
+  const pageKey = typeof raw.page === "string" ? raw.page.trim().slice(0, 40) : "";
+  const page = SCREEN_PAGES[pageKey] || "";
+  let error = "";
+  if (typeof raw.error === "string") {
+    error = raw.error.replace(/[\u0000-\u001F]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+  }
+  if (!page && !error) return null;
+  return { page: page || "unspecified screen", error };
+}
+
 function aiFailure(res, err) {
   const code = err.code || "AI_PROVIDER_ERROR";
   const status = err.status && err.status >= 400 ? err.status : 502;
@@ -47,12 +100,24 @@ function aiFailure(res, err) {
 // Section 5 feature 3: on-demand Q&A. Read-only, no approval needed
 // (approval-gates matrix row 1). Scoped to the requester's own permissions.
 exports.ask = async (req, res) => {
-  const { question } = req.body;
+  const { question } = req.body || {};
   if (!question || !String(question).trim()) {
     return res.status(400).json({ message: "question is required" });
   }
+  let history;
+  let screen;
   try {
-    const answer = await assistantService.answerQuestion(req.user, String(question).slice(0, 2000));
+    // userId, role, and department on the body are ignored. Scope comes from req.user.
+    history = sanitizeHistory(req.body.history);
+    screen = sanitizeScreen(req.body.screen);
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+  try {
+    const answer = await assistantService.answerQuestion(req.user, String(question).slice(0, 2000), {
+      history,
+      screen,
+    });
     res.json({
       text: answer.text,
       provider: answer.provider,

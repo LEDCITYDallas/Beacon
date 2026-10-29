@@ -1,8 +1,13 @@
+if (process.env.NODE_ENV === "production") {
+  console.error("[reset-consent] Refusing to reset consent in production.");
+  process.exit(1);
+}
+
 require("dotenv").config();
-process.env.MONGO_URI = "mongodb://127.0.0.1:49254/";
 const mongoose = require("mongoose");
 const connectDB = require("../config/db");
 const User = require("../models/User");
+const { redactSecrets } = require("../utils/redact");
 
 async function run() {
   await connectDB();
@@ -10,7 +15,7 @@ async function run() {
   try {
     const result = await User.updateOne(
       { email: "bilal@mock.ledcity.test" },
-      { $set: { consentAccepted: false, consentAcceptedAt: null } }
+      { $set: { consentAccepted: false, consentAcceptedAt: null, consentVersion: "" } }
     );
 
     if (result.matchedCount === 0) {
@@ -26,6 +31,6 @@ async function run() {
 }
 
 run().catch((err) => {
-  console.error("[reset-consent] failed:", err.message);
+  console.error("[reset-consent] failed:", redactSecrets(err.message));
   process.exit(1);
 });

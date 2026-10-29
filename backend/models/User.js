@@ -32,11 +32,14 @@ const userSchema = new mongoose.Schema(
     // this person is never live-viewed even if their role allows it.
     liveViewEnabled: { type: Boolean, default: null },
 
-    // Section 9: consent gate - hard requirement, not just policy text.
-    // A user cannot use the system (beyond viewing the consent screen)
-    // until this is true.
+    // Consent gate. Access requires consentAccepted and a consentVersion
+    // that matches the current draft. An older acceptance does not carry over
+    // when the notice text changes. Withdrawal clears the version and does
+    // not delete work records.
     consentAccepted: { type: Boolean, default: false },
     consentAcceptedAt: { type: Date, default: null },
+    consentVersion: { type: String, default: "" },
+    consentWithdrawnAt: { type: Date, default: null },
 
     isActive: { type: Boolean, default: true },
   },

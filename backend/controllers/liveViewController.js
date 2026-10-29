@@ -196,9 +196,9 @@ exports.postFrame = async (req, res) => {
   }
 };
 
-// Server-sent events: the admin's browser reads live frames through a fetch
-// stream (keeping the Authorization header), so the app itself never puts a
-// token in the URL. Only the viewer or a Super Admin may subscribe.
+// Server-sent events. The viewer must send Authorization: Bearer <jwt>.
+// A token in the query string is rejected by auth middleware and is never read
+// here. Only the session viewer or a Super Admin may subscribe.
 exports.stream = async (req, res) => {
   const session = await LiveViewSession.findById(req.params.id).populate("employee", "name");
   if (!session) return res.status(404).json({ message: "Session not found" });

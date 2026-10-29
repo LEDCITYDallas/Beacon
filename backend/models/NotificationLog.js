@@ -21,6 +21,7 @@ const NOTIFICATION_KINDS = [
   "HANDOFF",
   "DRAFT_MESSAGE",
   "TASK_FLAGGED",
+  "ACCOUNT_ACCESS",
 ];
 
 const notificationLogSchema = new mongoose.Schema(
